@@ -1,0 +1,2 @@
+sdr:
+	python ./rtl.py-
