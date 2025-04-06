@@ -349,7 +349,10 @@ def create_traffic_report(icao, lat, lon, alt_press, misc, nic, nac_p, horiz_vel
         alt_bytes = bytes([0x0F, 0xFF]) # Ensure invalid marker is used
 
     # Combine NIC and NACp into one byte: (NIC << 4) | NACp
-    nav_integrity_byte = ((nic & 0x0F) << 4) | (nac_p & 0x0F)
+    # Default to 0 if None before bitwise operations
+    nic_val = nic if nic is not None else 0
+    nac_p_val = nac_p if nac_p is not None else 0
+    nav_integrity_byte = ((nic_val & 0x0F) << 4) | (nac_p_val & 0x0F)
 
     vel_bytes = encode_velocity(horiz_vel)
     vv_bytes = encode_vertical_velocity(vert_vel)
@@ -368,8 +371,10 @@ def create_traffic_report(icao, lat, lon, alt_press, misc, nic, nac_p, horiz_vel
     payload.append(nav_integrity_byte)
     payload.extend(vel_bytes)
     payload.extend(vv_bytes)
-    payload.append(track_byte)
-    payload.append(emitter_cat & 0xFF)
+    payload.extend(track_byte)         # Use extend for bytes object
+    # Default emitter_cat to 0 if None
+    emitter_cat_val = emitter_cat if emitter_cat is not None else 0
+    payload.append(emitter_cat_val & 0xFF)
     payload.extend(callsign_bytes)
     # Payload length = 1 + 1 + 3 + 3 + 3 + 2 + 1 + 2 + 2 + 1 + 1 + 8 = 28 bytes
 

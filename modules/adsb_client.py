@@ -16,6 +16,8 @@ class AdsbClient(TcpClient):
         self.data_queue = data_queue
         self.stop_event = stop_event
         self._thread = None
+        # Add state for CPR decoding, keyed by ICAO
+        self.cpr_data = {}
         print(f"ADS-B Client: Connecting to {host}:{port}...")
 
     def handle_messages(self, messages):
@@ -66,7 +68,7 @@ class AdsbClient(TcpClient):
             icao = pms.icao(msg)
             tc = pms.adsb.typecode(msg)
 
-            aircraft_data = {'source': 'adsb', 'icao': icao, 'timestamp': datetime.utcnow()}
+            aircraft_data = {'source': 'adsb', 'icao': icao, 'timestamp': datetime.fromtimestamp(ts)} # Use message timestamp
 
             try:
                 if 1 <= tc <= 4: # Identification and Category
@@ -74,16 +76,52 @@ class AdsbClient(TcpClient):
                     if callsign:
                         aircraft_data['callsign'] = callsign.strip('_')
                 elif 9 <= tc <= 18: # Airborne Position (with Baro Altitude)
+                    print(f"DEBUG: Processing TC {tc} for {icao}") # Added Debug
                     alt = pms.adsb.altitude(msg)
                     if alt is not None:
                         aircraft_data['altitude'] = alt # Altitude in feet
-                    # Position decoding requires message pairs or reference position.
-                    # For GDL90, we often need both CPR odd/even messages.
-                    # We'll pass the raw message for potential later CPR decoding.
-                    aircraft_data['cpr_lat_odd'], aircraft_data['cpr_lon_odd'], aircraft_data['cpr_format_odd'] = pms.adsb.position_with_ref(msg, 0, 0) # Dummy ref
-                    aircraft_data['cpr_lat_even'], aircraft_data['cpr_lon_even'], aircraft_data['cpr_format_even'] = pms.adsb.position_with_ref(msg, 0, 0) # Dummy ref
-                    aircraft_data['raw_msg'] = msg # Store raw for CPR
-                    aircraft_data['tc'] = tc
+                        print(f"DEBUG: Decoded Altitude: {alt} for {icao}") # Added Debug
+                    # Decode NIC and NACp if available
+                    # NIC/NACp cannot be reliably decoded from TC 9-18 using standard pyModeS functions.
+                    # Broadcaster will use default (0) if not updated by other message types (e.g., TC28-31).
+                    aircraft_data['nic'] = None # Set to None explicitly
+                    aircraft_data['nac_p'] = None # Set to None explicitly
+                    aircraft_data['nic'] = None # Set to None directly
+                    aircraft_data['nac_p'] = None # Set to None directly
+
+                    # --- CPR Decoding Logic ---
+                    # Ensure ICAO entry exists in cpr_data
+                    if icao not in self.cpr_data:
+                        self.cpr_data[icao] = {'odd': None, 'even': None}
+
+                    # Determine frame type and store message/timestamp
+                    oe_flag = pms.adsb.oe_flag(msg)
+                    frame_type = 'even' if oe_flag == 0 else 'odd'
+                    self.cpr_data[icao][frame_type] = {'ts': ts, 'msg': msg}
+                    print(f"DEBUG: Stored {frame_type} frame for {icao} at {ts}") # Added Debug
+
+                    # Check if we have a recent pair
+                    odd_frame = self.cpr_data[icao]['odd']
+                    even_frame = self.cpr_data[icao]['even']
+
+                    if odd_frame and even_frame:
+                        t_odd = odd_frame['ts']
+                        t_even = even_frame['ts']
+                        msg_odd = odd_frame['msg']
+                        msg_even = even_frame['msg']
+
+                        print(f"DEBUG: Found pair for {icao}. Odd: {t_odd}, Even: {t_even}") # Added Debug
+                        # Check if the pair is recent enough (e.g., within 10 seconds)
+                        if abs(t_odd - t_even) < 10.0:
+                            # Attempt to decode position
+                            print(f"DEBUG: Attempting position decode for {icao}") # Added Debug
+                            position = pms.adsb.position(msg_even, msg_odd, t_even, t_odd)
+                            if position:
+                                aircraft_data['latitude'] = position[0]
+                                aircraft_data['longitude'] = position[1]
+                                print(f"DEBUG: Position Decoded: {position} for {icao}") # Added Debug
+                                # Optional: Clear the used frames to prevent re-computation
+                                # self.cpr_data[icao] = {'odd': None, 'even': None}
 
                 elif tc == 19: # Airborne Velocity
                     vel = pms.adsb.velocity(msg) # (speed, heading, vert_rate, speed_type)
@@ -108,8 +146,11 @@ class AdsbClient(TcpClient):
                         pass
 
             except Exception as e:
-                # print(f"ADS-B Client: Error decoding TC {tc} for {icao}: {e}") # Optional logging
-                pass # Ignore decoding errors for now
+                # Print specific errors during decoding
+                print(f"ADS-B Client: ERROR decoding TC {tc} for {icao}: {e}")
+                import traceback
+                traceback.print_exc() # Print full traceback for debugging
+                pass # Continue processing other messages
 
     def run(self):
         """Calls the parent TcpClient's run method to handle socket operations."""

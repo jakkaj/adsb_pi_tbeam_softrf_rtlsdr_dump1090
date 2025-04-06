@@ -91,29 +91,30 @@ class Broadcaster:
                     self.traffic_data[icao].update(data)
                     self.traffic_data[icao]['last_seen'] = time.time()
 
-                    # Attempt to create and send a traffic report
-                    # This is a simplified example, real implementation needs more logic
-                    # We need valid lat/lon for traffic reports, which requires CPR decoding
-                    lat = self.traffic_data[icao].get('latitude')
-                    lon = self.traffic_data[icao].get('longitude')
+                    # After updating state, check if we have enough stored data to send a report
+                    stored_lat = self.traffic_data[icao].get('latitude')
+                    stored_lon = self.traffic_data[icao].get('longitude')
+                    # Check stored altitude as well, as it might come from a different message than lat/lon
+                    stored_alt = self.traffic_data[icao].get('altitude')
 
-                    # Only send if we have basic required fields (lat/lon might be missing initially)
-                    if lat is not None and lon is not None and data.get('altitude') is not None:
+                    if stored_lat is not None and stored_lon is not None and stored_alt is not None:
+                        # We have the essentials, create the report using the latest stored data
                         traffic_msg = gdl90.create_traffic_report(
                             icao=icao,
-                            lat=lat,
-                            lon=lon,
-                            alt_press=data.get('altitude'),
-                            misc=0x01, # No Alert, ADS-B ICAO address type
-                            nic=self.traffic_data[icao].get('nic', 8), # Placeholder NIC or from data if available
-                            nac_p=self.traffic_data[icao].get('nac_p', 8), # Placeholder NACp or from data if available
-                            horiz_vel=data.get('speed'),
-                            vert_vel=data.get('vert_rate'),
-                            track=data.get('heading'),
-                            emitter_cat=self.traffic_data[icao].get('emitter_cat', 1), # Placeholder or from data
-                            callsign=data.get('callsign')
+                            lat=stored_lat,
+                            lon=stored_lon,
+                            alt_press=stored_alt,
+                            misc=0x00, # No Alert (0<<4), ADS-B ICAO address type (0)
+                            nic=self.traffic_data[icao].get('nic', 0), # Default to 0 (Unknown) if not available
+                            nac_p=self.traffic_data[icao].get('nac_p', 0), # Default to 0 (Unknown) if not available
+                            horiz_vel=self.traffic_data[icao].get('speed'),
+                            vert_vel=self.traffic_data[icao].get('vert_rate'),
+                            track=self.traffic_data[icao].get('heading'),
+                            emitter_cat=self.traffic_data[icao].get('emitter_cat', 0), # Default to 0 (No Info) if not available
+                            callsign=self.traffic_data[icao].get('callsign')
                         )
                         if traffic_msg:
+                            # Consider adding rate limiting here if needed, but send for now
                             self.send_message(traffic_msg)
 
             elif data.get('source') == 'flarm':

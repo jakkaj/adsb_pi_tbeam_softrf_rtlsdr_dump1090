@@ -19,7 +19,7 @@ UDP_BROADCAST_IP ?= 255.255.255.255
 SCRIPT = gdl90_broadcaster.py
 
 # Phony targets (not actual files)
-.PHONY: help run list-ports install-deps clean
+.PHONY: help run run-tester list-ports install-deps clean
 
 help:
 	@echo "Makefile for GDL90 Broadcaster"
@@ -29,6 +29,7 @@ help:
 	@echo "  make list-ports     List available serial ports"
 	@echo "  make run            Run the broadcaster with default settings (Serial: ${SERIAL_PORT})"
 	@echo "  make run PORT=/dev/ttyUSB0  Run with a specific serial port"
+	@echo "  make run-tester     Run the GDL90 message tester/decoder (listens on UDP ${UDP_PORT})"
 	@echo "  make clean          Remove temporary Python files"
 	@echo ""
 	@echo "Default Settings (can be overridden):"
@@ -62,7 +63,16 @@ run:
 		--udp-port ${UDP_PORT} \
 		--udp-broadcast-ip ${UDP_BROADCAST_IP}
 
+run-tester:
+	@echo "Starting GDL90 Tester (listening on UDP port ${UDP_PORT})..."
+	$(PYTHON) gdl90_tester.py --port ${UDP_PORT} --bind-address 0.0.0.0
+
 clean:
 	@echo "Cleaning up..."
 	find . -type f -name '*.py[co]' -delete
 	find . -type d -name '__pycache__' -exec rm -rf {} +
+
+1090:
+	~/github/dump1090/dump1090 --net --interactive
+
+
