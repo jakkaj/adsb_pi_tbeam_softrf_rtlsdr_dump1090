@@ -229,7 +229,7 @@ def create_ownship_geo_altitude(alt_geo, vpl):
     return frame_message(bytes(payload))
 
 
-def create_traffic_report(icao, lat, lon, alt_press, misc, nic, nac_p, horiz_vel, vert_vel, track, emitter_cat, callsign, code=0):
+def create_traffic_report(icao, lat, lon, alt_press, misc_flags, nic, nac_p, horiz_vel, vert_vel, track, emitter_cat, callsign, address_type=0, alert_status=0, code=0):
     """
     Creates a GDL90 Traffic Report message (ID 0x14).
 
@@ -238,7 +238,7 @@ def create_traffic_report(icao, lat, lon, alt_press, misc, nic, nac_p, horiz_vel
         lat (float): Latitude in degrees.
         lon (float): Longitude in degrees.
         alt_press (int): Pressure altitude in feet MSL.
-        misc (int): Miscellaneous indicators (0-15, see GDL90 spec).
+        misc_flags (int): Miscellaneous indicators (Airborne status bit 3, Track Type bits 1-0 - see GDL90 spec Table 9).
         nic (int): Navigation Integrity Category (0-11).
         nac_p (int): Navigation Accuracy Category for Position (0-11).
         horiz_vel (int): Horizontal velocity (ground speed) in knots.
@@ -259,7 +259,7 @@ def create_traffic_report(icao, lat, lon, alt_press, misc, nic, nac_p, horiz_vel
         lat (float): Latitude in degrees.
         lon (float): Longitude in degrees.
         alt_press (int): Pressure altitude in feet MSL.
-        misc (int): Miscellaneous indicators (0-15, see GDL90 spec).
+        misc_flags (int): Miscellaneous indicators (Airborne status bit 3, Track Type bits 1-0 - see GDL90 spec Table 9).
         nic (int): Navigation Integrity Category (0-11).
         nac_p (int): Navigation Accuracy Category for Position (0-11).
         horiz_vel (int): Horizontal velocity (ground speed) in knots.
@@ -275,7 +275,8 @@ def create_traffic_report(icao, lat, lon, alt_press, misc, nic, nac_p, horiz_vel
     message_id = MSG_ID_TRAFFIC_REPORT
 
     # First byte is traffic alert status in upper 4 bits, address type in lower 4 bits
-    status_byte = misc
+    # Status byte (Byte 2): Alert Status (bits 7-4), Address Type (bits 3-0)
+    status_byte = ((alert_status & 0x0F) << 4) | (address_type & 0x0F)
     
     # Pack ICAO address as 3 bytes
     if isinstance(icao, str):
@@ -310,9 +311,17 @@ def create_traffic_report(icao, lat, lon, alt_press, misc, nic, nac_p, horiz_vel
     # Use shared encoder functions for emitter category and callsign
     callsign_bytes = encode_callsign(callsign)
     
+    # --- Debug: Print input values ---
+    print(f"\nDEBUG create_traffic_report - Input values:")
+    print(f"  icao: {icao}, lat: {lat:.4f}, lon: {lon:.4f}")
+    print(f"  alt_press: {alt_press}, misc_flags: {misc_flags}, nic: {nic}, nac_p: {nac_p}")
+    print(f"  horiz_vel: {horiz_vel}, vert_vel: {vert_vel}, track: {track}")
+    print(f"  emitter_cat: {emitter_cat}, callsign: {callsign}")
+    # --- End Debug ---
+
     # Build the message payload
     payload = bytearray([message_id])
-    
+
     # Status byte (alert status in upper 4 bits, address type in lower 4 bits)
     payload.append(status_byte & 0xFF)
     
@@ -325,21 +334,56 @@ def create_traffic_report(icao, lat, lon, alt_press, misc, nic, nac_p, horiz_vel
     payload.extend(lat_bytes)
     payload.extend(lon_bytes)
     
-    # Encode altitude using the corrected encoder (no misc)
-    alt_bytes = encode_altitude_pressure(alt_press)
-    payload.extend(alt_bytes)           # Bytes 12-13
+    # --- Assemble Bytes 12-19 according to GDL90 Figure 2 ---
 
-    # Navigation integrity/accuracy
-    payload.append(nav_integrity_byte)  # Byte 14
+    # Bytes 12-13: Altitude (12 bits) + Misc (4 bits)
+    # Get the pre-encoded 2 bytes for altitude
+    alt_encoded_bytes = encode_altitude_pressure(alt_press)
+    # Byte 12 is the first byte from the encoder (Alt bits 11-4)
+    payload.append(alt_encoded_bytes[0])
+    # Byte 13 combines the lower nibble of the second altitude byte (Alt bits 3-0)
+    # with the misc field (lower 4 bits)
+    # Byte 13: Altitude bits 3-0 (upper nibble), Misc flags (lower nibble)
+    # Ensure only relevant misc_flags (Airborne, Track Type) are used here.
+    byte13 = (alt_encoded_bytes[1] & 0xF0) | (misc_flags & 0x0F)
+    payload.append(byte13)
 
-    # Encode velocities and track using corrected encoders
-    hv_bytes = encode_velocity(horiz_vel)
-    vv_bytes = encode_vertical_velocity(vert_vel)
+    # Byte 14: Navigation integrity/accuracy
+    payload.append(nav_integrity_byte)
+
+    # Bytes 15-16: Horizontal Velocity (12 bits) + VV Sign (1 bit)
+    # Get the pre-encoded 2 bytes for horizontal velocity
+    hv_encoded_bytes = encode_velocity(horiz_vel)
+    vv_sign_bit = 1 if (vert_vel is not None and vert_vel < 0) else 0
+    # Byte 15 is the first byte from the encoder (HV bits 11-4)
+    payload.append(hv_encoded_bytes[0])
+    # Byte 16 combines the lower nibble of the second HV byte (HV bits 3-0)
+    # with the VV sign bit (shifted into bit 3)
+    byte16 = (hv_encoded_bytes[1] & 0xF0) | (vv_sign_bit << 3) # Reserved bits 2-0 are 0
+    payload.append(byte16)
+
+    # Bytes 17-18: Vertical Velocity (11 bits magnitude) + Track Type (1 bit)
+    # Calculate the 11-bit magnitude for VV
+    encoded_vv_11bit_mag = 0x7FF # Default invalid
+    if vert_vel is not None:
+        # Value = abs(VV_fpm / 64), max 2047 (0x7FF)
+        encoded_vv_11bit_mag = round(abs(vert_vel) / 64.0)
+        if encoded_vv_11bit_mag > 2047: encoded_vv_11bit_mag = 2047
+    # Track type bit in byte 18
+    # 0 = True track angle (to match misc_flags=0x01)
+    # 1 = Magnetic heading
+    track_type_bit = 0 # Explicitly use 0 for True Track Angle
+    # Byte 17 contains VV magnitude bits 10-3
+    byte17 = (encoded_vv_11bit_mag >> 3) & 0xFF
+    # Byte 18 combines VV magnitude bits 2-0 (shifted left 5)
+    # with the track type bit (shifted left 4)
+    byte18 = ((encoded_vv_11bit_mag & 0x07) << 5) | (track_type_bit << 4) # Reserved bits 3-0 are 0
+    payload.append(byte17)
+    payload.append(byte18)
+
+    # Byte 19: Track/Heading (8 bits)
     track_byte = encode_track_heading(track)
-
-    payload.extend(hv_bytes)            # Bytes 15-16: Horizontal Velocity
-    payload.extend(vv_bytes)            # Bytes 17-18: Vertical Velocity
-    payload.extend(track_byte)          # Byte 19: Track/Heading
+    payload.extend(track_byte)
 
     # Emitter category (8 bits)
     payload.append(emitter_cat & 0xFF)  # Byte 20

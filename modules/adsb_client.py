@@ -128,6 +128,7 @@ class AdsbClient(TcpClient):
                     if vel and vel[0] is not None:
                         aircraft_data['speed'] = vel[0] # knots
                         aircraft_data['heading'] = vel[1] # degrees
+                        aircraft_data['track'] = vel[1]   # ADSB TC19 velocity info is actually track angle, not heading
                         aircraft_data['vert_rate'] = vel[2] # fpm
                         aircraft_data['speed_type'] = vel[3]
                 # Add other typecodes if needed for GDL90 (e.g., Surface Position 5-8, GNSS Alt 20-22)
@@ -138,6 +139,7 @@ class AdsbClient(TcpClient):
                     timestamp_str = aircraft_data['timestamp'].strftime("%H:%M:%S.%f")[:-3]
                     print(f"ADS-B Decoded [{timestamp_str}]: {aircraft_data}")
                     try:
+                        print(f"DEBUG adsb_client queue input: {aircraft_data}")
                         self.data_queue.put(aircraft_data, block=False)
                     except queue.Full:
                         # Handle queue full scenario if necessary, e.g., log a warning

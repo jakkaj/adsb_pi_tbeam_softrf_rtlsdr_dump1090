@@ -106,7 +106,8 @@ def decode_lat_lon(three_bytes):
 def decode_altitude_pressure(two_bytes):
     """Decodes GDL90 12-bit pressure altitude into feet."""
     if len(two_bytes) != 2: return None
-    encoded_alt = ((two_bytes[0] & 0x0F) << 8) | two_bytes[1]
+    # Correct decoding: Byte 0 is bits 11-4, Byte 1 upper nibble is bits 3-0
+    encoded_alt = (two_bytes[0] << 4) | (two_bytes[1] >> 4)
     if encoded_alt == 0xFFF: # 0xFFF represents invalid/unknown
         return None
     # Value = (Altitude_ft + 1000) / 25
@@ -126,7 +127,8 @@ def decode_altitude_geometric(two_bytes):
 def decode_velocity(two_bytes):
     """Decodes GDL90 12-bit horizontal velocity into knots."""
     if len(two_bytes) != 2: return None
-    encoded_vel = ((two_bytes[0] & 0x0F) << 8) | two_bytes[1]
+    # Correct decoding: Byte 0 is bits 11-4, Byte 1 upper nibble is bits 3-0
+    encoded_vel = (two_bytes[0] << 4) | (two_bytes[1] >> 4)
     if encoded_vel == 0xFFF: # Invalid/Unknown
         return None
     return float(encoded_vel) # 1 knot increments
@@ -268,11 +270,29 @@ def decode_traffic_report(payload):
     lon = decode_lat_lon(payload[8:11])
     alt_press = decode_altitude_pressure(payload[11:13])
     nav_integrity_byte = payload[13]
-    gs_knots = decode_velocity(payload[14:16])
-    vv_fpm = decode_vertical_velocity(payload[16:18])
-    track_deg = decode_track_heading(payload[18:19])
-    emitter_cat = payload[19]
-    callsign = decode_callsign(payload[20:28])
+    gs_knots = decode_velocity(payload[14:16]) # Bytes 15-16 (indices 14, 15)
+
+    # Vertical Velocity Decoding (handled directly here)
+    # Sign bit is in Byte 16 (index 15), bit 3
+    vv_sign_bit = (payload[15] >> 3) & 0x01
+    # Magnitude bits 10-3 are in Byte 17 (index 16)
+    # Magnitude bits 2-0 are in Byte 18 (index 17), bits 7-5
+    vv_mag_11bit = (payload[16] << 3) | (payload[17] >> 5)
+
+    vv_fpm = None
+    if vv_mag_11bit != 0x7FF: # 0x7FF (2047) is invalid/unknown
+        vv_fpm = vv_mag_11bit * 64.0
+        if vv_sign_bit == 1:
+            vv_fpm *= -1
+
+    track_deg = decode_track_heading(payload[18:19]) # Byte 19 (index 18)
+    emitter_cat = payload[19] # Byte 20 (index 19)
+    callsign = decode_callsign(payload[20:28]) # Bytes 21-28 (indices 20-27)
+
+    # Extract Misc field from Byte 13 (index 12) - lower 4 bits
+    misc_packed_byte = payload[12]
+    misc_val = misc_packed_byte & 0x0F
+    track_type_bits = misc_val & 0x03 # Bits 1 and 0 determine track validity/type
 
     alert_status = (status_byte >> 4) & 0x0F
     addr_type = status_byte & 0x0F
@@ -290,6 +310,15 @@ def decode_traffic_report(payload):
         20: "Cluster Obstacle", 21: "Line Obstacle"
     }
 
+    # Format track based on validity bits
+    track_display = "Invalid"
+    if track_type_bits == 0b01: # True Track Angle
+        track_display = f"{track_deg:.1f}° (True)" if track_deg is not None else "Invalid"
+    elif track_type_bits == 0b10: # Heading (Magnetic)
+        track_display = f"{track_deg:.1f}° (Mag)" if track_deg is not None else "Invalid"
+    elif track_type_bits == 0b11: # Heading (True)
+        track_display = f"{track_deg:.1f}° (True Hdg)" if track_deg is not None else "Invalid"
+    # If track_type_bits == 0b00, it remains "Invalid"
 
     return {
         "Type": "Traffic Report",
@@ -304,7 +333,7 @@ def decode_traffic_report(payload):
         "NACp": nac_p,
         "Ground Speed": f"{gs_knots:.0f} kts" if gs_knots is not None else "Invalid",
         "Vertical Velocity": f"{vv_fpm:.0f} fpm" if vv_fpm is not None else "Invalid",
-        "Track": f"{track_deg:.1f}°" if track_deg is not None else "Invalid",
+        "Track": track_display,
         "Emitter Cat": emitter_map.get(emitter_cat, f"Code {emitter_cat}"),
     }
 

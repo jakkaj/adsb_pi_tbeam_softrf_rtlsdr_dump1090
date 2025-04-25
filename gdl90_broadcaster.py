@@ -13,6 +13,7 @@ import serial.tools.list_ports
 from modules import adsb_client
 from modules import flarm_client
 from modules import broadcaster
+from modules import sample_traffic_generator
 # gdl90 module is used by broadcaster, no direct import needed here usually
 
 DEFAULT_DUMP1090_HOST = '127.0.0.1'
@@ -57,6 +58,13 @@ def main():
     spoof_group = parser.add_argument_group('GPS Spoofing Options')
     spoof_group.add_argument('--spoof-gps', action='store_true', help='Spoof GPS data (lat, lon, speed, track, validity) for testing.')
     spoof_group.add_argument('--location-file', type=str, help='Path to a JSON location configuration file for GPS spoofing.')
+    
+    # Sample Traffic Generation Options
+    traffic_group = parser.add_argument_group('Sample Traffic Generation')
+    traffic_group.add_argument('--generate-sample-traffic', action='store_true',
+                             help='Generate sample aircraft traffic in an X pattern around ownship location')
+    traffic_group.add_argument('--sample-traffic-distance', type=float, default=5.0,
+                             help='Distance (in nautical miles) for sample traffic pattern (default: 5.0)')
 
     # Utility Arguments
     parser.add_argument('--list-ports', action='store_true',
@@ -72,6 +80,10 @@ def main():
     print(f"  ADS-B Source: {args.dump1090_host}:{args.dump1090_port}")
     print(f"  FLARM Source: {args.serial_port} @ {args.serial_baud} baud")
     print(f"  GDL90 Output: UDP Broadcast to {args.udp_broadcast_ip}:{args.udp_port}")
+    
+    if args.generate_sample_traffic:
+        print(f"  Sample Traffic: Enabled (X pattern, {args.sample_traffic_distance} NM)")
+    
     print("Press Ctrl+C to stop.")
 
     # --- Thread Setup ---
@@ -106,6 +118,16 @@ def main():
         daemon=True
     )
     threads.append(broadcast_thread)
+    
+    # Sample Traffic Generator Thread (if enabled)
+    if args.generate_sample_traffic:
+        sample_traffic_thread = threading.Thread(
+            target=sample_traffic_generator.run_generator,
+            args=(args, data_queue, stop_event),
+            name="Sample Traffic Generator",
+            daemon=True
+        )
+        threads.append(sample_traffic_thread)
 
     # Start all threads
     print("\nStarting worker threads...")

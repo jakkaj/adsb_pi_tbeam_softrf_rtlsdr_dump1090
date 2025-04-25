@@ -19,7 +19,7 @@ UDP_BROADCAST_IP ?= 255.255.255.255
 SCRIPT = gdl90_broadcaster.py
 
 # Phony targets (not actual files)
-.PHONY: help run run-spoof run-spoof-location run-spoof-location-brisbane run-tester run-receiver list-ports install-deps clean test
+.PHONY: help run run-spoof run-spoof-location run-spoof-location-brisbane run-sample-traffic run-sample-traffic-location run-tester run-receiver list-ports install-deps clean test
 
 help:
 	@echo "Makefile for GDL90 Broadcaster"
@@ -31,6 +31,8 @@ help:
 	@echo "  make run            Run the broadcaster with default settings (Serial: ${SERIAL_PORT})"
 	@echo "  make run-spoof      Run the broadcaster with GPS spoofing enabled (for testing)"
 	@echo "  make run-spoof-location LOCATION=surfers_paradise  Run with location-specific GPS spoofing"
+	@echo "  make run-sample-traffic  Run with sample aircraft traffic in X pattern over current position"
+	@echo "  make run-sample-traffic-location LOCATION=brisbane  Run with sample traffic over specified location"
 	@echo "  make run PORT=/dev/ttyUSB0  Run with a specific serial port"
 	@echo "  make run-tester     Run the GDL90 message tester/decoder (listens on UDP ${UDP_PORT})"
 	@echo "  make run-receiver   Run the GDL90 receiver to listen for messages (on UDP ${UDP_PORT})"
@@ -116,6 +118,44 @@ run-spoof-location:
 # Specific location targets for convenience
 run-spoof-location-file:
 	@$(MAKE) run-spoof-location LOCATION=gold_coast_airport
+
+# Sample traffic generation target (uses real or default location)
+run-sample-traffic:
+	@echo "Starting GDL90 Broadcaster with sample traffic generation..."
+	@echo "  Serial Port: ${SERIAL_PORT}"
+	@echo "  Baud Rate:   ${SERIAL_BAUD}"
+	@echo "  Dump1090:    ${DUMP1090_HOST}:${DUMP1090_PORT}"
+	@echo "  UDP Output:  ${UDP_BROADCAST_IP}:${UDP_PORT}"
+	@echo "  Sample Traffic: X pattern (4 aircraft)"
+	$(PYTHON) $(SCRIPT) \
+		--serial-port ${SERIAL_PORT} \
+		--serial-baud ${SERIAL_BAUD} \
+		--dump1090-host ${DUMP1090_HOST} \
+		--dump1090-port ${DUMP1090_PORT} \
+		--udp-port ${UDP_PORT} \
+		--udp-broadcast-ip ${UDP_BROADCAST_IP} \
+		--generate-sample-traffic
+
+# Sample traffic with specific location
+TRAFFIC_DISTANCE ?= 5.0
+run-sample-traffic-location:
+	@echo "Starting GDL90 Broadcaster with sample traffic and location spoofing..."
+	@echo "  Serial Port: ${SERIAL_PORT}"
+	@echo "  Baud Rate:   ${SERIAL_BAUD}"
+	@echo "  Dump1090:    ${DUMP1090_HOST}:${DUMP1090_PORT}"
+	@echo "  UDP Output:  ${UDP_BROADCAST_IP}:${UDP_PORT}"
+	@echo "  Location:    ${LOCATION}"
+	@echo "  Sample Traffic: X pattern (4 aircraft, ${TRAFFIC_DISTANCE} NM)"
+	$(PYTHON) $(SCRIPT) \
+		--serial-port ${SERIAL_PORT} \
+		--serial-baud ${SERIAL_BAUD} \
+		--dump1090-host ${DUMP1090_HOST} \
+		--dump1090-port ${DUMP1090_PORT} \
+		--udp-port ${UDP_PORT} \
+		--udp-broadcast-ip ${UDP_BROADCAST_IP} \
+		--location-file locations/${LOCATION}.json \
+		--generate-sample-traffic \
+		--sample-traffic-distance ${TRAFFIC_DISTANCE}
 
 run-tester:
 	@echo "Starting GDL90 Tester (listening on UDP port ${UDP_PORT})..."

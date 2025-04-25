@@ -96,11 +96,10 @@ class Broadcaster:
             data = self.data_queue.get_nowait() # Non-blocking get
             # print(f"DEBUG: Processing data: {data}") # Optional debug
 
-            if data.get('source') == 'adsb':
-                # --- ADS-B Processing ---
-                # TODO: Implement proper ADS-B to GDL90 Traffic Report conversion
-                # This requires maintaining state for aircraft (position, velocity, etc.)
-                # and potentially handling CPR decoding if not done in adsb_client.
+            if data.get('source') == 'adsb' or data.get('source') == 'sample_traffic':
+                # --- ADS-B or Sample Traffic Processing ---
+                # Process both ADS-B and Sample Traffic sources the same way
+                # Sample traffic is pre-formatted to match ADS-B data structure
                 icao = data.get('icao')
                 if icao:
                     # Update traffic data store
@@ -108,6 +107,10 @@ class Broadcaster:
                         self.traffic_data[icao] = {'last_seen': time.time()}
                     self.traffic_data[icao].update(data)
                     self.traffic_data[icao]['last_seen'] = time.time()
+                    
+                    # Debug print for sample traffic
+                    if data.get('source') == 'sample_traffic':
+                        print(f"Sample Traffic: {icao} at {data.get('latitude'):.4f}, {data.get('longitude'):.4f}, alt={data.get('altitude')}")
 
                     # After updating state, check if we have enough stored data to send a report
                     stored_lat = self.traffic_data[icao].get('latitude')
@@ -117,23 +120,37 @@ class Broadcaster:
 
                     if stored_lat is not None and stored_lon is not None and stored_alt is not None:
                         # We have the essentials, create the report using the latest stored data
+                        # Determine misc byte based on airborne status
+                        # Address Type: ADS-B ICAO (0)
+                        # Airborne Status: Bit 3 (0=On Ground, 1=Airborne)
+                        is_airborne = self.traffic_data[icao].get('airborne_status', True) # Default to airborne
+                        misc_byte = 0x08 if is_airborne else 0x00 # Bit 3: 1=Airborne, 0=Ground
+                        # Set bits 1 & 0 to indicate True Track Angle is valid (01)
+                        # See GDL90 Spec Table 9
+                        misc_byte |= 0x01
+
                         traffic_msg = create_traffic_report(
                             icao=icao,
                             lat=stored_lat,
                             lon=stored_lon,
                             alt_press=stored_alt,
-                            misc=0x00, # No Alert (0<<4), ADS-B ICAO address type (0)
-                            nic=self.traffic_data[icao].get('nic', 0), # Default to 0 (Unknown) if not available
-                            nac_p=self.traffic_data[icao].get('nac_p', 0), # Default to 0 (Unknown) if not available
+                            misc_flags=misc_byte, # Pass the calculated misc flags (Airborne + Track Type)
+                            address_type=0,       # Assuming ADS-B ICAO address type for all traffic here
+                            nic=self.traffic_data[icao].get('nic', 8),
+                            nac_p=self.traffic_data[icao].get('nac_p', 8),
                             horiz_vel=self.traffic_data[icao].get('speed'),
                             vert_vel=self.traffic_data[icao].get('vert_rate'),
-                            track=self.traffic_data[icao].get('heading'),
-                            emitter_cat=self.traffic_data[icao].get('emitter_cat', 0), # Default to 0 (No Info) if not available
+                            # For ADS-B data, TC19 velocity messages provide track angle, not true heading
+                            # We prioritize 'track' over 'heading' for proper directional display
+                            track=self.traffic_data[icao].get('track', self.traffic_data[icao].get('heading')),
+                            emitter_cat=self.traffic_data[icao].get('emitter_cat', 1),
                             callsign=self.traffic_data[icao].get('callsign')
-                        )
+                        ) # Close the create_traffic_report function call
                         if traffic_msg:
                             # Consider adding rate limiting here if needed, but send for now
-                            self.send_message(traffic_msg)
+                            send_result = self.send_message(traffic_msg)
+                            if data.get('source') == 'sample_traffic' and not send_result:
+                                print(f"Sample Traffic: Failed to send traffic message for {icao}")
 
             elif data.get('source') == 'flarm':
                 # --- FLARM Processing ---

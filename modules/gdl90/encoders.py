@@ -185,8 +185,9 @@ def encode_track_heading(degrees):
         # Use 0, but rely on validity flags elsewhere if possible
         return b'\x00'
 
-    # Encoded as value = (degrees / 360) * 256 for better precision consistency
-    encoded = int(round((degrees / 360.0) * 256.0)) & 0xFF
+    # Encoded as value = (degrees / 360) * 256, truncated to integer
+    # Matches sample implementation: int(degrees / (360.0 / 256.0))
+    encoded = int((degrees / 360.0) * 256.0) & 0xFF
     return bytes([encoded])
 
 
