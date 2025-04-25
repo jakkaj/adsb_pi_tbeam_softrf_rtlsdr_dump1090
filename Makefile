@@ -19,7 +19,7 @@ UDP_BROADCAST_IP ?= 255.255.255.255
 SCRIPT = gdl90_broadcaster.py
 
 # Phony targets (not actual files)
-.PHONY: help run run-spoof run-tester list-ports install-deps clean
+.PHONY: help run run-spoof run-tester list-ports install-deps clean test
 
 help:
 	@echo "Makefile for GDL90 Broadcaster"
@@ -31,6 +31,7 @@ help:
 	@echo "  make run-spoof      Run the broadcaster with GPS spoofing enabled (for testing)"
 	@echo "  make run PORT=/dev/ttyUSB0  Run with a specific serial port"
 	@echo "  make run-tester     Run the GDL90 message tester/decoder (listens on UDP ${UDP_PORT})"
+	@echo "  make test           Run unit tests for the GDL90 modules"
 	@echo "  make clean          Remove temporary Python files"
 	@echo ""
 	@echo "Default Settings (can be overridden):"
@@ -90,6 +91,10 @@ clean:
 
 1090:
 	~/github/dump1090/dump1090 --net --interactive
+
+test:
+	@echo "Running GDL90 unit tests..."
+	$(PYTHON) -m unittest discover -s tests -p 'test_*.py'
 
 vscode:
 	docker run -it --init -p 8000:3000 -v "$(pwd):/home/workspace" gitpod/openvscode-server

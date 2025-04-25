@@ -8,12 +8,15 @@ from datetime import datetime, timezone
 import sys
 import select
 
-# Attempt to import the CRC function from the existing module
+# Import from the new module structure
 try:
-    from modules.gdl90 import calculate_crc, FLAG_BYTE, CONTROL_ESCAPE, ESCAPE_XOR
-    from modules.gdl90 import MSG_ID_HEARTBEAT, MSG_ID_OWNSHIP_REPORT, MSG_ID_OWNSHIP_GEO_ALT, MSG_ID_TRAFFIC_REPORT
+    from modules.gdl90.constants import (
+        FLAG_BYTE, CONTROL_ESCAPE, ESCAPE_XOR,
+        MSG_ID_HEARTBEAT, MSG_ID_OWNSHIP_REPORT, MSG_ID_OWNSHIP_GEO_ALT, MSG_ID_TRAFFIC_REPORT
+    )
+    from modules.gdl90.crc import calculate_crc
 except ImportError:
-    print("Error: Could not import from modules.gdl90.")
+    print("Error: Could not import from modules.gdl90 package.")
     print("Ensure this script is run from the project root directory and modules are accessible.")
     sys.exit(1)
 

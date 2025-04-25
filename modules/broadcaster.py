@@ -3,7 +3,7 @@ import time
 import queue
 import threading
 from datetime import datetime, timezone
-from . import gdl90 # Use relative import within the package
+from .gdl90 import create_heartbeat_message, create_ownship_report, create_ownship_geo_altitude, create_traffic_report
 
 # Constants
 HEARTBEAT_INTERVAL = 1.0  # Send heartbeat every 1 second
@@ -100,7 +100,7 @@ class Broadcaster:
 
                     if stored_lat is not None and stored_lon is not None and stored_alt is not None:
                         # We have the essentials, create the report using the latest stored data
-                        traffic_msg = gdl90.create_traffic_report(
+                        traffic_msg = create_traffic_report(
                             icao=icao,
                             lat=stored_lat,
                             lon=stored_lon,
@@ -250,7 +250,7 @@ class Broadcaster:
                 # Print debugging info for the heartbeat
                 if spoof_gps_enabled:
                     print(f"DEBUG: Sending heartbeat with GPS Valid = {gps_valid_flag}")
-                heartbeat_msg = gdl90.create_heartbeat_message(gps_valid=gps_valid_flag)
+                heartbeat_msg = create_heartbeat_message(gps_valid=gps_valid_flag)
                 if not self.send_message(heartbeat_msg):
                     print("Broadcaster: Heartbeat send failed. Attempting to reset socket...")
                     self.close_socket()
@@ -278,7 +278,7 @@ class Broadcaster:
             # Send Ownship Report periodically (e.g., every 1 second if data available)
             # Condition now relies on spoofed data or real data including pressure alt
             if now - last_ownship_report_time >= 1.0 and 'latitude' in self.ownship_data and 'altitude_press' in self.ownship_data:
-                 ownship_report_msg = gdl90.create_ownship_report(
+                 ownship_report_msg = create_ownship_report(
                      lat=self.ownship_data.get('latitude'),
                      lon=self.ownship_data.get('longitude'),
                      alt_press=self.ownship_data.get('altitude_press'), # Use parsed pressure altitude (NOT spoofed)
@@ -304,7 +304,7 @@ class Broadcaster:
                 # This will ensure we don't send None to the encoder
                 geo_alt = self.ownship_data.get('altitude_geo')
                 if geo_alt is not None:
-                    ownship_geo_msg = gdl90.create_ownship_geo_altitude(
+                    ownship_geo_msg = create_ownship_geo_altitude(
                         alt_geo=geo_alt, # Use parsed or spoofed geo alt
                         vpl=self.ownship_data.get('vpl', 0xFFFF) # Vertical Protection Limit (Placeholder)
                     )

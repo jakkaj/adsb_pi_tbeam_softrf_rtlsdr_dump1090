@@ -6,7 +6,10 @@ import struct
 import time
 
 # Import from modules
-from modules.gdl90 import create_heartbeat_message, frame_message, calculate_crc, FLAG_BYTE, CONTROL_ESCAPE, ESCAPE_XOR
+from modules.gdl90.messages import create_heartbeat_message
+from modules.gdl90.framing import frame_message
+from modules.gdl90.crc import calculate_crc
+from modules.gdl90.constants import FLAG_BYTE, CONTROL_ESCAPE, ESCAPE_XOR
 
 # Import from gdl90_tester
 from gdl90_tester import parse_frame, decode_heartbeat, unstuff_data
