@@ -169,8 +169,12 @@ def decode_callsign(eight_bytes):
 # --- Message Decoding Functions ---
 
 def decode_heartbeat(payload):
-    if len(payload) < 6: return None
-    msg_id, status1, status2, ts1, ts2, ts3 = struct.unpack('>BBBBBB', payload[:6])
+    # Heartbeat payload = ID(1) + Status1(1) + Status2(1) + TS_Low(2) = 5 bytes
+    if len(payload) < 5: return None
+    # Unpack ID, Status1, Status2 as big-endian bytes
+    # Unpack Timestamp lower 16 bits as little-endian unsigned short
+    msg_id, status1, status2 = struct.unpack('>BBB', payload[:3])
+    ts_lower_16, = struct.unpack('<H', payload[3:5]) # Comma unpacks the single tuple element
 
     # Status Byte 1
     uat_init = bool(status1 & 0x80)
@@ -180,15 +184,17 @@ def decode_heartbeat(payload):
     fisb_avail = bool(status1 & 0x08)
 
     # Status Byte 2
-    ts_type_gps = bool(status2 & 0x80) # 0=UTC, 1=GPS
+    # Bit 7 (MSB) contains bit 16 of the timestamp
+    ts_bit16 = (status2 & 0x80) >> 7
     gps_valid = bool(status2 & 0x40)
     maint_req = bool(status2 & 0x20)
     ident_active = bool(status2 & 0x10)
     # reserved_bits = status2 & 0x0F # Not usually displayed
 
-    # Timestamp (UTC seconds * 10)
-    utc_timestamp_field = (ts1 << 16) | (ts2 << 8) | ts3
-    seconds_since_midnight = utc_timestamp_field / 10.0
+    # Timestamp: Reconstruct from lower 16 bits and the bit stored in Status2
+    # Note: GDL90 spec v1.0 doesn't explicitly define timestamp type bit, assume UTC based on create_heartbeat_message
+    utc_timestamp_field = (ts_bit16 << 16) | ts_lower_16
+    seconds_since_midnight = utc_timestamp_field / 10.0 # GDL90 timestamp is 0.1s increments
 
     return {
         "Type": "Heartbeat",
@@ -196,7 +202,7 @@ def decode_heartbeat(payload):
         "CDTI Available": cdti_avail,
         "Ground Uplink": gnd_uplink,
         "FIS-B Available": fisb_avail,
-        "Timestamp Type": "GPS" if ts_type_gps else "UTC",
+        # "Timestamp Type": "GPS" if ts_type_gps else "UTC", # Bit 7 is used for timestamp, not type - Removed this line
         "GPS Valid": gps_valid,
         "Maintenance Req": maint_req,
         "IDENT Active": ident_active,

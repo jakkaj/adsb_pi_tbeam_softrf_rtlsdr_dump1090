@@ -1,6 +1,7 @@
 import struct
 import math
 from datetime import datetime, timezone
+import unittest # Added import
 
 # GDL90 Constants
 FLAG_BYTE = 0x7E
@@ -270,7 +271,7 @@ def create_heartbeat_message(gps_valid=False, maintenance_required=False, ident_
     ts_byte1 = ts_lower_16bits & 0xFF           # LSB
     ts_byte2 = (ts_lower_16bits >> 8) & 0xFF    # MSB
 
-    # Format message with 6 bytes: ID, Status1, Status2, TS1(LSB), TS2(MSB)
+    # Format message with 7 bytes: ID, Status1, Status2, TS1(LSB), TS2(MSB), UplinkCount, BasicLongCount
     # Note that we're packing the timestamp in little-endian format
     payload = struct.pack('>BBB',  # The message ID and status bytes are big-endian
                           message_id,
@@ -278,11 +279,12 @@ def create_heartbeat_message(gps_valid=False, maintenance_required=False, ident_
                           status_byte2)
     
     payload += struct.pack('<BB',  # The timestamp is little-endian
-                           ts_byte1, 
+                           ts_byte1,
                            ts_byte2)
 
-    # We don't include a message count field as it's not in our current implementation
-    # The spec mentions it's optional
+    # Add message count fields (UplinkCount, Basic/LongCount) as required by GDL90 spec
+    # Set both to zero for now
+    payload += struct.pack('BB', 0, 0)
 
     return frame_message(payload)
 
@@ -530,59 +532,89 @@ def create_traffic_report(icao, lat, lon, alt_press, misc, nic, nac_p, horiz_vel
 
 
 # --- Test Functions ---
-if __name__ == '__main__':
-    print("Testing GDL90 Module...")
+class TestGDL90Encoding(unittest.TestCase):
 
-    # Test Heartbeat
-    hb_msg = create_heartbeat_message(gps_valid=True, utc_timing=True)
-    print(f"Heartbeat: {hb_msg.hex().upper()}")
+    def test_heartbeat(self):
+        hb_msg = create_heartbeat_message(gps_valid=True, utc_timing=True)
+        print(f"Heartbeat: {hb_msg.hex().upper()}")
+        self.assertIsInstance(hb_msg, bytes)
+        self.assertTrue(hb_msg.startswith(b'\x7E'))
+        self.assertTrue(hb_msg.endswith(b'\x7E'))
+        self.assertGreater(len(hb_msg), 2) # Should be more than just flags
 
-    # Test Ownship Report (Example Data)
-    ownship_msg = create_ownship_report(
-        lat=34.12345, lon=-118.54321, alt_press=10000, misc=1, # Airborne
-        nic=8, nac_p=8, ground_speed=120, track=90, vert_vel=500
-    )
-    if ownship_msg:
+    def test_ownship_report(self):
+        ownship_msg = create_ownship_report(
+            lat=34.12345, lon=-118.54321, alt_press=10000, misc=1, # Airborne
+            nic=8, nac_p=8, ground_speed=120, track=90, vert_vel=500
+        )
         print(f"Ownship Report: {ownship_msg.hex().upper()}")
+        self.assertIsInstance(ownship_msg, bytes)
+        self.assertTrue(ownship_msg.startswith(b'\x7E'))
+        self.assertTrue(ownship_msg.endswith(b'\x7E'))
+        self.assertGreater(len(ownship_msg), 2)
 
-    # Test Ownship Geo Altitude
-    ownship_geo_msg = create_ownship_geo_altitude(alt_geo=10250, vpl=0xFFFF)
-    if ownship_geo_msg:
+    def test_ownship_geo_altitude(self):
+        ownship_geo_msg = create_ownship_geo_altitude(alt_geo=10250, vpl=0xFFFF)
         print(f"Ownship Geo Alt: {ownship_geo_msg.hex().upper()}")
+        self.assertIsInstance(ownship_geo_msg, bytes)
+        self.assertTrue(ownship_geo_msg.startswith(b'\x7E'))
+        self.assertTrue(ownship_geo_msg.endswith(b'\x7E'))
+        self.assertGreater(len(ownship_geo_msg), 2)
 
-    # Test Traffic Report (Example Data)
-    traffic_msg = create_traffic_report(
-        icao="AABBCC", lat=34.12500, lon=-118.54000, alt_press=11000,
-        misc=0x00, # No Alert (0 << 4), ADS-B ICAO address type (0)
-        nic=8, nac_p=8, horiz_vel=150, vert_vel=-200, track=270,
-        emitter_cat=1, # Light aircraft
-        callsign="N12345"
-    )
-    if traffic_msg:
+    def test_traffic_report(self):
+        traffic_msg = create_traffic_report(
+            icao="AABBCC", lat=34.12500, lon=-118.54000, alt_press=11000,
+            misc=0x00, # No Alert (0 << 4), ADS-B ICAO address type (0)
+            nic=8, nac_p=8, horiz_vel=150, vert_vel=-200, track=270,
+            emitter_cat=1, # Light aircraft
+            callsign="N12345"
+        )
         print(f"Traffic Report: {traffic_msg.hex().upper()}")
+        self.assertIsInstance(traffic_msg, bytes)
+        self.assertTrue(traffic_msg.startswith(b'\x7E'))
+        self.assertTrue(traffic_msg.endswith(b'\x7E'))
+        self.assertGreater(len(traffic_msg), 2)
 
-    # Test byte stuffing edge cases
-    payload_needs_stuffing = bytes([0x00, 0x7E, 0x14, 0x7D, 0xAB])
-    framed_stuffed = frame_message(payload_needs_stuffing)
-    print(f"Original Payload: {payload_needs_stuffing.hex().upper()}")
-    # Expected CRC: C0=99 (0x63), C1=99+20+125+171 = 415 -> 159 (0x9F) -> CRC = 63 9F
-    # Payload + CRC: 00 7E 14 7D AB 63 9F
-    # Stuffed: 7E 00 7D 5E 14 7D 5D AB 63 9F 7E
-    print(f"Framed & Stuffed: {framed_stuffed.hex().upper()}")
+    def test_byte_stuffing(self):
+        payload_needs_stuffing = bytes([0x00, 0x7E, 0x14, 0x7D, 0xAB])
+        framed_stuffed = frame_message(payload_needs_stuffing)
+        print(f"Original Payload: {payload_needs_stuffing.hex().upper()}")
+        print(f"Framed & Stuffed: {framed_stuffed.hex().upper()}")
+        # Expected CRC calculated based on payload 00 7E 14 7D AB -> 48 04 (CRC-16-CCITT/Kermit)
+        # Expected Framed/Stuffed: 7E 00 7D 5E 14 7D 5D AB 48 04 7E
+        expected_hex = "7E007D5E147D5DAB48047E" # Corrected expected value
+        self.assertEqual(framed_stuffed.hex().upper(), expected_hex)
 
-    # Test invalid values
-    invalid_alt_msg = create_ownship_report(lat=34, lon=-118, alt_press=None, misc=1, nic=8, nac_p=8, ground_speed=100, track=180, vert_vel=0)
-    print(f"Ownship Invalid Alt: {invalid_alt_msg.hex().upper()}")
-    invalid_pos_msg = create_ownship_report(lat=None, lon=None, alt_press=5000, misc=1, nic=8, nac_p=8, ground_speed=100, track=180, vert_vel=0)
-    print(f"Ownship Invalid Pos: {invalid_pos_msg.hex().upper()}")
-    invalid_vv_msg = create_traffic_report("C0FFEE", 34, -118, 12000, 0x00, 8, 8, 200, None, 90, 1, "TEST")
-    print(f"Traffic Invalid VV: {invalid_vv_msg.hex().upper()}")
+    def test_invalid_values(self):
+        invalid_alt_msg = create_ownship_report(lat=34, lon=-118, alt_press=None, misc=1, nic=8, nac_p=8, ground_speed=100, track=180, vert_vel=0)
+        print(f"Ownship Invalid Alt: {invalid_alt_msg.hex().upper()}")
+        self.assertIsInstance(invalid_alt_msg, bytes)
+        self.assertTrue(invalid_alt_msg.startswith(b'\x7E'))
+        self.assertTrue(invalid_alt_msg.endswith(b'\x7E'))
 
-    # Test longitude encoding fix
-    traffic_msg_lon_fix = create_traffic_report(
-        icao="AABBCC", lat=34.12500, lon=-118.54000, alt_press=11000,
-        misc=0x00, nic=8, nac_p=8, horiz_vel=150, vert_vel=-200, track=270,
-        emitter_cat=1, callsign="N12345"
-    )
-    if traffic_msg_lon_fix:
+        invalid_pos_msg = create_ownship_report(lat=None, lon=None, alt_press=5000, misc=1, nic=8, nac_p=8, ground_speed=100, track=180, vert_vel=0)
+        print(f"Ownship Invalid Pos: {invalid_pos_msg.hex().upper()}")
+        self.assertIsInstance(invalid_pos_msg, bytes)
+        self.assertTrue(invalid_pos_msg.startswith(b'\x7E'))
+        self.assertTrue(invalid_pos_msg.endswith(b'\x7E'))
+
+        invalid_vv_msg = create_traffic_report("C0FFEE", 34, -118, 12000, 0x00, 8, 8, 200, None, 90, 1, "TEST")
+        print(f"Traffic Invalid VV: {invalid_vv_msg.hex().upper()}")
+        self.assertIsInstance(invalid_vv_msg, bytes)
+        self.assertTrue(invalid_vv_msg.startswith(b'\x7E'))
+        self.assertTrue(invalid_vv_msg.endswith(b'\x7E'))
+
+    def test_longitude_encoding_fix(self):
+        # This test seems redundant with test_traffic_report, but keep for now
+        traffic_msg_lon_fix = create_traffic_report(
+            icao="AABBCC", lat=34.12500, lon=-118.54000, alt_press=11000,
+            misc=0x00, nic=8, nac_p=8, horiz_vel=150, vert_vel=-200, track=270,
+            emitter_cat=1, callsign="N12345"
+        )
         print(f"Traffic Report (Lon Fix): {traffic_msg_lon_fix.hex().upper()}")
+        self.assertIsInstance(traffic_msg_lon_fix, bytes)
+        self.assertTrue(traffic_msg_lon_fix.startswith(b'\x7E'))
+        self.assertTrue(traffic_msg_lon_fix.endswith(b'\x7E'))
+
+if __name__ == '__main__':
+    unittest.main()

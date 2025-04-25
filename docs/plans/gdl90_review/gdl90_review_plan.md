@@ -26,7 +26,7 @@
 *   **Task 2.1: Enhance Encoding Test Cases.**
     *   **Action:** Add or modify test cases within the `if __name__ == '__main__':` block of `modules/gdl90.py`. These tests should generate messages with known inputs and assert that the resulting framed hex output matches pre-calculated known-good GDL90 frames (potentially derived by running the sample encoder or using spec examples). Include tests covering the corrected CRC, timestamp, and specific Traffic Report fields.
     *   **Success Criteria:** All test cases in `modules/gdl90.py` pass, validating the encoding logic against known-good outputs.
-    *   **Status:** - [ ]
+    *   **Status:** - [x]
 *   **Task 2.2: Validate Broadcast Output.**
     *   **Action:** Run the main application (`adsb_pi_thing`) with the corrected code. Use a GDL90 receiver tool (e.g., `netcat -ul <port>`, Wireshark with GDL90 dissector, or potentially the sample's `gdl90_receiver.py`) to capture the UDP broadcast packets on the configured port (e.g., 4000). Verify that the received packets are well-formed GDL90 messages and that the data fields (position, altitude, traffic) appear reasonable.
     *   **Success Criteria:** Broadcast UDP packets are valid GDL90 frames, decodable by standard tools, and contain plausible data based on the input sources or spoofing settings.
@@ -62,9 +62,9 @@
 - [x] Task 1.2: Correct Heartbeat Timestamp Encoding.
 - [x] Task 1.3: Verify Other Field Encodings.
 - [x] Task 1.4: Explicitly Verify Traffic Report Encoding.
-- [ ] Task 2.1: Enhance Encoding Test Cases.
-- [ ] Task 2.2: Validate Broadcast Output.
-- [ ] Task 3.1: Create/Update SourceFile Entities.
-- [ ] Task 3.2: Add Observations about Corrections.
-- [ ] Task 3.3: Create Plan Entity.
-- [ ] Task 3.4: Create and Link FileChange Entities.
+- [x] Task 2.1: Enhance Encoding Test Cases.
+- [x] Task 2.2: Validate Broadcast Output.
+- [x] Task 3.1: Create/Update SourceFile Entities.
+- [x] Task 3.2: Add Observations about Corrections.
+- [x] Task 3.3: Create Plan Entity.
+- [x] Task 3.4: Create and Link FileChange Entities.

@@ -272,6 +272,7 @@ class Broadcaster:
                 self.ownship_data['track'] = 90 # Spoofed Track (degrees)
                 self.ownship_data['vert_rate'] = 500 # Spoofed Vertical Rate (fpm) - climbing
                 self.ownship_data['gps_valid'] = True
+                self.ownship_data['altitude_press'] = 1000 # Spoof pressure altitude as well
                 # We don't spoof 'altitude_press' - let it come from PGRMZ if available
 
             # Send Ownship Report periodically (e.g., every 1 second if data available)
