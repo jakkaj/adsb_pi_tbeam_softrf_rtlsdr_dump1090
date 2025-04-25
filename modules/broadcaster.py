@@ -210,11 +210,9 @@ class Broadcaster:
                                     self.ownship_data['altitude_geo'] = alt_geo * 3.28084 if alt_geo is not None else None # Meters to feet
                                     self.ownship_data['gps_valid'] = fix_quality > 0
                                 else:
-                                    # If essential fields are missing, default to Gold Coast and mark GPS as invalid
-                                    logging.warning(f"FLARM Client: Missing essential GPS fields ({msg_type}). Defaulting to Gold Coast.")
-                                    self.ownship_data['latitude'] = -28.016667
-                                    self.ownship_data['longitude'] = 153.400000
-                                    self.ownship_data['altitude_geo'] = None # Altitude is unknown if position is defaulted
+                                    # If essential fields are missing, just mark GPS as invalid without defaulting to any location
+                                    logging.warning(f"FLARM Client: Missing essential GPS fields ({msg_type}). GPS marked as invalid.")
+                                    # Don't set default coordinates anymore
                                     self.ownship_data['gps_valid'] = False
                                     # raise ValueError("Missing essential GPS fields (lat/lon/fix)") # Removed error raising
 
