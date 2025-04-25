@@ -40,18 +40,20 @@ def encode_lat_lon(degrees):
     return bytes([b1, b2, b3])
 
 
-def encode_altitude_pressure(feet):
+def encode_altitude_pressure(feet, misc=0):
     """
     Encodes pressure altitude in feet into GDL90 12-bit format (in 2 bytes).
     
     Args:
         feet: Altitude in feet MSL
+        misc: Miscellaneous indicators (0-15) to include in lower 4 bits of second byte
         
     Returns:
         2-byte encoding of the pressure altitude
     """
     if feet is None:
         # 0xFFF represents invalid/unknown altitude
+        # For invalid altitude, we don't include misc bits to match reference implementation
         return bytes([0x0F, 0xFF])  # Upper 4 bits are part of the 12 bits
 
     # Altitude is encoded in 25 ft increments, offset by -1000 ft.
@@ -62,14 +64,17 @@ def encode_altitude_pressure(feet):
     if encoded_alt < 0:
         encoded_alt = 0
     if encoded_alt > 0xFFE:
-        encoded_alt = 0xFFF  # Use invalid if out of range (0xFFF)
+        encoded_alt = 0xFFE  # Use 0xFFE for max valid value (avoid 0xFFF which is invalid)
 
-    # Pack into 2 bytes (12 bits used)
-    # Value = bbbb bbbb bbbb (12 bits)
-    # Byte 1 = 0000 bbbb (bits 11-8)
-    # Byte 2 = bbbb bbbb (bits 7-0)
-    b1 = (encoded_alt >> 8) & 0x0F
-    b2 = encoded_alt & 0xFF
+    # Pack into 2 bytes according to GDL90 spec
+    # First byte: bits 11-4 of altitude (top 8 bits)
+    # Second byte: bits 3-0 of altitude (bottom 4 bits) in upper nibble, misc in lower nibble
+    b1 = (encoded_alt & 0xFF0) >> 4  # Top 8 bits (bits 11-4)
+    b2 = ((encoded_alt & 0x00F) << 4) | (misc & 0x0F)  # Bottom 4 bits + misc
+    
+    # For debugging
+    # print(f"Altitude: {feet} ft -> Encoded: {encoded_alt} -> Bytes: {b1:02X} {b2:02X}")
+    
     return bytes([b1, b2])
 
 

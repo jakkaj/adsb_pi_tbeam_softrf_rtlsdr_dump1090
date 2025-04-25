@@ -25,8 +25,9 @@ help:
 	@echo "Makefile for GDL90 Broadcaster"
 	@echo ""
 	@echo "Usage:"
-	@echo "  make install-deps   Install required Python packages (pyserial, pyModeS)"
-	@echo "  make list-ports     List available serial ports"
+	@echo "  make install-deps         Install required Python packages with pip (pyserial, pyModeS)"
+	@echo "  make install-system-deps  Install required packages system-wide (for Debian/Ubuntu)"
+	@echo "  make list-ports           List available serial ports"
 	@echo "  make run            Run the broadcaster with default settings (Serial: ${SERIAL_PORT})"
 	@echo "  make run-spoof      Run the broadcaster with GPS spoofing enabled (for testing)"
 	@echo "  make run PORT=/dev/ttyUSB0  Run with a specific serial port"
@@ -46,6 +47,13 @@ help:
 install-deps:
 	@echo "Installing dependencies..."
 	$(PYTHON) -m pip install pyserial pyModeS
+
+install-system-deps:
+	@echo "Installing system dependencies using apt..."
+	sudo apt-get update
+	sudo apt-get install -y python3-serial python3-pip
+	@echo "Note: pyModeS isn't available as a system package, installing with pip..."
+	sudo pip3 install pyModeS --break-system-packages
 
 list-ports:
 	@echo "Listing available serial ports..."
@@ -71,13 +79,15 @@ run-spoof:
 	@echo "  Baud Rate:   ${SERIAL_BAUD}"
 	@echo "  Dump1090:    ${DUMP1090_HOST}:${DUMP1090_PORT}"
 	@echo "  UDP Output:  ${UDP_BROADCAST_IP}:${UDP_PORT}"
-	$(PYTHON) $(SCRIPT) \
+	@echo "  Interface:   eth0 (Note: requires sudo for interface binding)"
+	sudo $(PYTHON) $(SCRIPT) \
 		--serial-port ${SERIAL_PORT} \
 		--serial-baud ${SERIAL_BAUD} \
 		--dump1090-host ${DUMP1090_HOST} \
 		--dump1090-port ${DUMP1090_PORT} \
 		--udp-port ${UDP_PORT} \
 		--udp-broadcast-ip ${UDP_BROADCAST_IP} \
+		--interface eth0 \
 		--spoof-gps
 
 run-tester:

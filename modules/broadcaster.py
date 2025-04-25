@@ -31,6 +31,21 @@ class Broadcaster:
             self.sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
             # Enable broadcasting mode
             self.sock.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
+            
+            # Bind to specific interface if provided
+            if hasattr(self.args, 'interface') and self.args.interface:
+                try:
+                    # SO_BINDTODEVICE is Linux-specific and requires root privileges
+                    # The value 25 is the socket option number for SO_BINDTODEVICE on Linux
+                    self.sock.setsockopt(socket.SOL_SOCKET, 25, self.args.interface.encode())
+                    print(f"Broadcaster: Binding to interface: {self.args.interface}")
+                except PermissionError:
+                    print(f"Broadcaster: ERROR - Binding to interface {self.args.interface} requires root privileges")
+                    return False
+                except Exception as e:
+                    print(f"Broadcaster: ERROR - Failed to bind to interface {self.args.interface}: {e}")
+                    print("Broadcaster: Continuing with default interface")
+            
             # Set a timeout so the receive/send calls don't block indefinitely
             self.sock.settimeout(0.5)
             print(f"Broadcaster: UDP Socket created for {self.broadcast_address}")
