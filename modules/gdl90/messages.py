@@ -365,31 +365,33 @@ def create_traffic_report(icao, lat, lon, alt_press, misc_flags, nic, nac_p, hor
     byte16 = (hv_encoded_bytes[1] & 0xF0) | (vv_sign_bit << 3) # Reserved bits 2-0 are 0
     payload.append(byte16)
 
-    # Bytes 17-18: Vertical Velocity (11 bits magnitude) + Track Type (1 bit)
+    # Bytes 17-18: Vertical Velocity (11 bits magnitude) + Track Type (1 bit) + Track/Heading
     # Calculate the 11-bit magnitude for VV
     encoded_vv_11bit_mag = 0x7FF # Default invalid
     if vert_vel is not None:
         # Value = abs(VV_fpm / 64), max 2047 (0x7FF)
         encoded_vv_11bit_mag = round(abs(vert_vel) / 64.0)
         if encoded_vv_11bit_mag > 2047: encoded_vv_11bit_mag = 2047
-    # Track type bit in byte 18
+    
+    # Track type bit in byte 17
     # 0 = True track angle (to match misc_flags=0x01)
     # 1 = Magnetic heading
     track_type_bit = 0 # Explicitly use 0 for True Track Angle
+    
+    # Encode track/heading
+    track_value = 0
+    if track is not None:
+        track_value = int(track * (256.0 / 360.0)) & 0xFF
+    
     # Byte 17 contains VV magnitude bits 10-3
     byte17 = (encoded_vv_11bit_mag >> 3) & 0xFF
-    # Byte 18 combines VV magnitude bits 2-0 (shifted left 5)
-    # with the track type bit (shifted left 4)
-    byte18 = ((encoded_vv_11bit_mag & 0x07) << 5) | (track_type_bit << 4) # Reserved bits 3-0 are 0
     payload.append(byte17)
-    payload.append(byte18)
-
-    # Byte 19: Track/Heading (8 bits)
-    track_byte = encode_track_heading(track)
-    payload.extend(track_byte)
+    
+    # Byte 18 combines track/heading value
+    payload.append(track_value)
 
     # Emitter category (8 bits)
-    payload.append(emitter_cat & 0xFF)  # Byte 20
+    payload.append(emitter_cat & 0xFF)  # Byte 19
     
     # Callsign (8 bytes)
     payload.extend(callsign_bytes)
@@ -399,6 +401,6 @@ def create_traffic_report(icao, lat, lon, alt_press, misc_flags, nic, nac_p, hor
     payload.append(((code & 0x0F) << 4) | 0x00)
     
     # Payload length = 1(ID) + 1(Status) + 3(ICAO) + 3(lat) + 3(lon) + 2(alt) + 1(NIC/NAC)
-    #                  + 2(Horiz) + 2(Vert) + 1(Track) + 1(Emit) + 8(Callsign) + 1(Codes) = 29 bytes
+    #                  + 2(Horiz) + 2(Vert/Track) + 1(Emit) + 8(Callsign) + 1(Codes) = 28 bytes
     
     return frame_message(bytes(payload))
