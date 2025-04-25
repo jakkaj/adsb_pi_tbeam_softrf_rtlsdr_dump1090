@@ -19,7 +19,7 @@ UDP_BROADCAST_IP ?= 255.255.255.255
 SCRIPT = gdl90_broadcaster.py
 
 # Phony targets (not actual files)
-.PHONY: help run run-tester list-ports install-deps clean
+.PHONY: help run run-spoof run-tester list-ports install-deps clean
 
 help:
 	@echo "Makefile for GDL90 Broadcaster"
@@ -28,6 +28,7 @@ help:
 	@echo "  make install-deps   Install required Python packages (pyserial, pyModeS)"
 	@echo "  make list-ports     List available serial ports"
 	@echo "  make run            Run the broadcaster with default settings (Serial: ${SERIAL_PORT})"
+	@echo "  make run-spoof      Run the broadcaster with GPS spoofing enabled (for testing)"
 	@echo "  make run PORT=/dev/ttyUSB0  Run with a specific serial port"
 	@echo "  make run-tester     Run the GDL90 message tester/decoder (listens on UDP ${UDP_PORT})"
 	@echo "  make clean          Remove temporary Python files"
@@ -62,6 +63,21 @@ run:
 		--dump1090-port ${DUMP1090_PORT} \
 		--udp-port ${UDP_PORT} \
 		--udp-broadcast-ip ${UDP_BROADCAST_IP}
+
+run-spoof:
+	@echo "Starting GDL90 Broadcaster with GPS spoofing..."
+	@echo "  Serial Port: ${SERIAL_PORT}"
+	@echo "  Baud Rate:   ${SERIAL_BAUD}"
+	@echo "  Dump1090:    ${DUMP1090_HOST}:${DUMP1090_PORT}"
+	@echo "  UDP Output:  ${UDP_BROADCAST_IP}:${UDP_PORT}"
+	$(PYTHON) $(SCRIPT) \
+		--serial-port ${SERIAL_PORT} \
+		--serial-baud ${SERIAL_BAUD} \
+		--dump1090-host ${DUMP1090_HOST} \
+		--dump1090-port ${DUMP1090_PORT} \
+		--udp-port ${UDP_PORT} \
+		--udp-broadcast-ip ${UDP_BROADCAST_IP} \
+		--spoof-gps
 
 run-tester:
 	@echo "Starting GDL90 Tester (listening on UDP port ${UDP_PORT})..."

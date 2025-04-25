@@ -49,8 +49,10 @@ def main():
     # Output Arguments
     parser.add_argument('--udp-port', type=int, default=DEFAULT_UDP_PORT,
                         help=f"UDP port for GDL90 broadcast (default: {DEFAULT_UDP_PORT})")
-    parser.add_argument('--udp-broadcast-ip', type=str, default=DEFAULT_UDP_BROADCAST_IP,
-                        help=f"UDP broadcast IP address (default: {DEFAULT_UDP_BROADCAST_IP})")
+    parser.add_argument('--udp-broadcast-ip', default='255.255.255.255', help='UDP broadcast IP address (default: 255.255.255.255)')
+
+    # Add spoofing argument
+    parser.add_argument('--spoof-gps', action='store_true', help='Spoof GPS data (lat, lon, speed, track, validity) for testing.')
 
     # Utility Arguments
     parser.add_argument('--list-ports', action='store_true',
