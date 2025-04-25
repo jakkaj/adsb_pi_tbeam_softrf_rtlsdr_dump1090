@@ -75,4 +75,5 @@ clean:
 1090:
 	~/github/dump1090/dump1090 --net --interactive
 
-
+vscode:
+	docker run -it --init -p 8000:3000 -v "$(pwd):/home/workspace" gitpod/openvscode-server
