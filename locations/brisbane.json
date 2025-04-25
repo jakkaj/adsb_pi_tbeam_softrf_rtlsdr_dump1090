@@ -1,0 +1,12 @@
+{
+    "name": "Brisbane",
+    "description": "Downtown Brisbane, Australia",
+    "latitude": -27.4698,
+    "longitude": 153.0251,
+    "altitude_geo": 20,
+    "altitude_press": 20,
+    "speed": 0,
+    "track": 0,
+    "vert_rate": 0,
+    "gps_valid": true
+}

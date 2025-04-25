@@ -1,0 +1,12 @@
+{
+    "name": "Sydney Opera House",
+    "description": "Iconic landmark in Sydney Harbour, Australia",
+    "latitude": -33.8568,
+    "longitude": 151.2153,
+    "altitude_geo": 10,
+    "altitude_press": 10,
+    "speed": 0,
+    "track": 0,
+    "vert_rate": 0,
+    "gps_valid": true
+}

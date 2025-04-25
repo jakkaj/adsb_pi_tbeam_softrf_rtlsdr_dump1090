@@ -1,0 +1,12 @@
+{
+    "name": "Flying Aircraft",
+    "description": "Simulated aircraft in flight near Brisbane",
+    "latitude": -27.5000,
+    "longitude": 153.1000,
+    "altitude_geo": 5000,
+    "altitude_press": 5000,
+    "speed": 150,
+    "track": 45,
+    "vert_rate": 500,
+    "gps_valid": true
+}

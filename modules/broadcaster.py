@@ -2,6 +2,8 @@ import socket
 import time
 import queue
 import threading
+import json
+import os
 from datetime import datetime, timezone
 from .gdl90 import create_heartbeat_message, create_ownship_report, create_ownship_geo_altitude, create_traffic_report
 
@@ -147,84 +149,92 @@ class Broadcaster:
                     # This requires knowing ownship position. For now, we skip conversion.
                     # print(f"DEBUG: Received FLARM PFLAA: {fields}")
                     pass
-                elif msg_type in ['GPGGA', 'GPRMC', 'GNGGA', 'GNRMC']:
-                    # TODO: Extract ownship position/velocity from GPS sentences
-                    # Update self.ownship_data
-                    # Example for GPGGA:
-                    # GNGGA/GPGGA: Need index 9 for altitude, index 6 for fix quality
-                    if msg_type.endswith('GGA') and len(fields) >= 10:
-                        try:
-                            lat_nmea_str = fields[1]
-                            lat_dir = fields[2]
-                            lon_nmea_str = fields[3]
-                            lon_dir = fields[4]
-                            fix_quality_str = fields[6]
-                            alt_geo_str = fields[9] # Altitude MSL is index 9
+                elif msg_type in ['GPGGA', 'GPRMC', 'GNGGA', 'GNRMC', 'PGRMZ']:
+                    # Check if we're using location spoofing
+                    spoof_gps_enabled = getattr(self.args, 'spoof_gps', False)
+                    location_file_enabled = getattr(self.args, 'location_file', None) is not None
+                    
+                    # Skip all GPS/NMEA processing when location spoofing is enabled
+                    if spoof_gps_enabled or location_file_enabled:
+                        # Silently ignore GPS data from FLARM when spoofing is enabled
+                        pass
+                    else:
+                        # Process GPS data normally when not spoofing
+                        # Example for GPGGA:
+                        # GNGGA/GPGGA: Need index 9 for altitude, index 6 for fix quality
+                        if msg_type.endswith('GGA') and len(fields) >= 10:
+                            try:
+                                lat_nmea_str = fields[1]
+                                lat_dir = fields[2]
+                                lon_nmea_str = fields[3]
+                                lon_dir = fields[4]
+                                fix_quality_str = fields[6]
+                                alt_geo_str = fields[9] # Altitude MSL is index 9
 
-                            # Check if essential fields are non-empty before conversion
-                            if lat_nmea_str and lon_nmea_str and fix_quality_str:
-                                lat_nmea = float(lat_nmea_str)
-                                lon_nmea = float(lon_nmea_str)
-                                fix_quality = int(fix_quality_str)
-                                alt_geo = float(alt_geo_str) if alt_geo_str else None # Altitude can be empty
+                                # Check if essential fields are non-empty before conversion
+                                if lat_nmea_str and lon_nmea_str and fix_quality_str:
+                                    lat_nmea = float(lat_nmea_str)
+                                    lon_nmea = float(lon_nmea_str)
+                                    fix_quality = int(fix_quality_str)
+                                    alt_geo = float(alt_geo_str) if alt_geo_str else None # Altitude can be empty
 
-                                # Convert NMEA format (DDDMM.MMMM) to decimal degrees
-                                lat_deg = int(lat_nmea / 100)
-                                lat_min = lat_nmea - (lat_deg * 100)
-                                self.ownship_data['latitude'] = lat_deg + (lat_min / 60.0)
-                                if lat_dir == 'S': self.ownship_data['latitude'] *= -1
+                                    # Convert NMEA format (DDDMM.MMMM) to decimal degrees
+                                    lat_deg = int(lat_nmea / 100)
+                                    lat_min = lat_nmea - (lat_deg * 100)
+                                    self.ownship_data['latitude'] = lat_deg + (lat_min / 60.0)
+                                    if lat_dir == 'S': self.ownship_data['latitude'] *= -1
 
-                                lon_deg = int(lon_nmea / 100)
-                                lon_min = lon_nmea - (lon_deg * 100)
-                                self.ownship_data['longitude'] = lon_deg + (lon_min / 60.0)
-                                if lon_dir == 'W': self.ownship_data['longitude'] *= -1
+                                    lon_deg = int(lon_nmea / 100)
+                                    lon_min = lon_nmea - (lon_deg * 100)
+                                    self.ownship_data['longitude'] = lon_deg + (lon_min / 60.0)
+                                    if lon_dir == 'W': self.ownship_data['longitude'] *= -1
 
-                                self.ownship_data['altitude_geo'] = alt_geo * 3.28084 if alt_geo is not None else None # Meters to feet
-                                self.ownship_data['gps_valid'] = fix_quality > 0
-                            else:
-                                # If essential fields are missing, default to Gold Coast and mark GPS as invalid
-                                print(f"FLARM Client: Missing essential GPS fields ({msg_type}). Defaulting to Gold Coast.")
-                                self.ownship_data['latitude'] = -28.016667
-                                self.ownship_data['longitude'] = 153.400000
-                                self.ownship_data['altitude_geo'] = None # Altitude is unknown if position is defaulted
-                                self.ownship_data['gps_valid'] = False
-                                # raise ValueError("Missing essential GPS fields (lat/lon/fix)") # Removed error raising
+                                    self.ownship_data['altitude_geo'] = alt_geo * 3.28084 if alt_geo is not None else None # Meters to feet
+                                    self.ownship_data['gps_valid'] = fix_quality > 0
+                                else:
+                                    # If essential fields are missing, default to Gold Coast and mark GPS as invalid
+                                    print(f"FLARM Client: Missing essential GPS fields ({msg_type}). Defaulting to Gold Coast.")
+                                    self.ownship_data['latitude'] = -28.016667
+                                    self.ownship_data['longitude'] = 153.400000
+                                    self.ownship_data['altitude_geo'] = None # Altitude is unknown if position is defaulted
+                                    self.ownship_data['gps_valid'] = False
+                                    # raise ValueError("Missing essential GPS fields (lat/lon/fix)") # Removed error raising
 
-                            self.ownship_data['last_gps_update'] = time.time()
-                            # print(f"DEBUG: Updated ownship position: Lat={self.ownship_data['latitude']:.4f}, Lon={self.ownship_data['longitude']:.4f}, AltGeo={self.ownship_data['altitude_geo']}")
-                        except (ValueError, IndexError) as e:
-                            print(f"FLARM Client: Error parsing GPS data ({msg_type}): {e}")
-                    # GNRMC/GPRMC: Need index 1 (status), 6 (speed), 7 (track)
-                    elif msg_type.endswith('RMC') and len(fields) >= 8:
-                        try:
-                            status = fields[1]
-                            if status == 'A': # 'A' = Active/Valid, 'V' = Void
-                                speed_knots_str = fields[6]
-                                track_deg_str = fields[7]
-                                if speed_knots_str:
-                                    self.ownship_data['speed'] = float(speed_knots_str)
-                                if track_deg_str:
-                                    self.ownship_data['track'] = float(track_deg_str)
-                                # print(f"DEBUG: Updated ownship speed/track: Speed={self.ownship_data.get('speed'):.1f}, Track={self.ownship_data.get('track'):.1f}")
-                            else:
-                                # If RMC is void, invalidate speed/track? Or just don't update?
-                                # Let's just not update for now.
-                                pass
-                        except (ValueError, IndexError) as e:
-                            print(f"FLARM Client: Error parsing GPS data ({msg_type}): {e}")
-                    # PGRMZ: Need index 0 (altitude), 1 (unit)
-                    elif msg_type == 'PGRMZ' and len(fields) >= 2:
-                        try:
-                            alt_str = fields[0]
-                            unit = fields[1]
-                            if alt_str and unit.upper() == 'F': # Check for non-empty string and feet unit
-                                self.ownship_data['altitude_press'] = int(alt_str)
-                                # print(f"DEBUG: Updated ownship pressure altitude: AltPress={self.ownship_data['altitude_press']}")
-                            elif alt_str and unit.upper() == 'M': # Handle meters if needed
-                                self.ownship_data['altitude_press'] = int(float(alt_str) * 3.28084)
-                                # print(f"DEBUG: Updated ownship pressure altitude (from meters): AltPress={self.ownship_data['altitude_press']}")
-                        except (ValueError, IndexError) as e:
-                            print(f"FLARM Client: Error parsing Pressure Altitude data ({msg_type}): {e}")
+                                self.ownship_data['last_gps_update'] = time.time()
+                                # print(f"DEBUG: Updated ownship position: Lat={self.ownship_data['latitude']:.4f}, Lon={self.ownship_data['longitude']:.4f}, AltGeo={self.ownship_data['altitude_geo']}")
+                            except (ValueError, IndexError) as e:
+                                print(f"FLARM Client: Error parsing GPS data ({msg_type}): {e}")
+                        # GNRMC/GPRMC: Need index 1 (status), 6 (speed), 7 (track)
+                        elif msg_type.endswith('RMC') and len(fields) >= 8:
+                            try:
+                                status = fields[1]
+                                if status == 'A': # 'A' = Active/Valid, 'V' = Void
+                                    speed_knots_str = fields[6]
+                                    track_deg_str = fields[7]
+                                    if speed_knots_str:
+                                        self.ownship_data['speed'] = float(speed_knots_str)
+                                    if track_deg_str:
+                                        self.ownship_data['track'] = float(track_deg_str)
+                                    # print(f"DEBUG: Updated ownship speed/track: Speed={self.ownship_data.get('speed'):.1f}, Track={self.ownship_data.get('track'):.1f}")
+                                else:
+                                    # If RMC is void, invalidate speed/track? Or just don't update?
+                                    # Let's just not update for now.
+                                    pass
+                            except (ValueError, IndexError) as e:
+                                print(f"FLARM Client: Error parsing GPS data ({msg_type}): {e}")
+                        # PGRMZ: Need index 0 (altitude), 1 (unit)
+                        elif msg_type == 'PGRMZ' and len(fields) >= 2:
+                            try:
+                                alt_str = fields[0]
+                                unit = fields[1]
+                                if alt_str and unit.upper() == 'F': # Check for non-empty string and feet unit
+                                    self.ownship_data['altitude_press'] = int(alt_str)
+                                    # print(f"DEBUG: Updated ownship pressure altitude: AltPress={self.ownship_data['altitude_press']}")
+                                elif alt_str and unit.upper() == 'M': # Handle meters if needed
+                                    self.ownship_data['altitude_press'] = int(float(alt_str) * 3.28084)
+                                    # print(f"DEBUG: Updated ownship pressure altitude (from meters): AltPress={self.ownship_data['altitude_press']}")
+                            except (ValueError, IndexError) as e:
+                                print(f"FLARM Client: Error parsing Pressure Altitude data ({msg_type}): {e}")
                     # Handle other relevant FLARM messages (PFLAU, etc.) if needed
 
             self.data_queue.task_done() # Signal that the item is processed
@@ -250,10 +260,25 @@ class Broadcaster:
 
         last_ownship_report_time = 0
         last_ownship_geo_alt_time = 0
-        # Access the spoof_gps flag from the args passed during initialization
+        # Access the spoofing parameters from the args passed during initialization
         spoof_gps_enabled = getattr(self.args, 'spoof_gps', False)
-        if spoof_gps_enabled:
-            print("*** Broadcaster: GPS Spoofing Enabled ***")
+        location_file = getattr(self.args, 'location_file', None)
+        
+        # Location data from file (initialized as None)
+        self.location_data = None
+        
+        # If location file is provided, try to load it
+        if location_file and os.path.exists(location_file):
+            try:
+                with open(location_file, 'r') as f:
+                    self.location_data = json.load(f)
+                print(f"*** Broadcaster: GPS Spoofing Enabled using location file: {location_file} ***")
+                print(f"*** Location: {self.location_data.get('name', 'Unknown')}: {self.location_data.get('description', 'No description')} ***")
+            except Exception as e:
+                print(f"Error loading location file {location_file}: {e}")
+                print("Falling back to default spoofing values")
+        elif spoof_gps_enabled:
+            print("*** Broadcaster: GPS Spoofing Enabled with default values ***")
 
         while not self.stop_event.is_set():
             now = time.monotonic() # Use monotonic clock for intervals
@@ -279,7 +304,18 @@ class Broadcaster:
             self.process_data_queue()
 
             # --- Apply Spoofing if Enabled ---
-            if spoof_gps_enabled:
+            if self.location_data:
+                # Use values from the loaded location file
+                self.ownship_data['latitude'] = self.location_data.get('latitude', -28.0016)
+                self.ownship_data['longitude'] = self.location_data.get('longitude', 153.4291)
+                self.ownship_data['altitude_geo'] = self.location_data.get('altitude_geo', 5)
+                self.ownship_data['altitude_press'] = self.location_data.get('altitude_press', 5)
+                self.ownship_data['speed'] = self.location_data.get('speed', 0)
+                self.ownship_data['track'] = self.location_data.get('track', 0)
+                self.ownship_data['vert_rate'] = self.location_data.get('vert_rate', 0)
+                self.ownship_data['gps_valid'] = self.location_data.get('gps_valid', True)
+            elif spoof_gps_enabled:
+                # Use default hardcoded values if no location file provided
                 self.ownship_data['latitude'] = -27.4698 # Brisbane Lat
                 self.ownship_data['longitude'] = 153.0251 # Brisbane Lon
                 self.ownship_data['altitude_geo'] = 1500 # Spoofed Geo Alt (feet)
@@ -288,22 +324,24 @@ class Broadcaster:
                 self.ownship_data['vert_rate'] = 500 # Spoofed Vertical Rate (fpm) - climbing
                 self.ownship_data['gps_valid'] = True
                 self.ownship_data['altitude_press'] = 1000 # Spoof pressure altitude as well
-                # We don't spoof 'altitude_press' - let it come from PGRMZ if available
 
             # Send Ownship Report periodically (e.g., every 1 second if data available)
             # Condition now relies on spoofed data or real data including pressure alt
             if now - last_ownship_report_time >= 1.0 and 'latitude' in self.ownship_data and 'altitude_press' in self.ownship_data:
                  ownship_report_msg = create_ownship_report(
-                     lat=self.ownship_data.get('latitude'),
-                     lon=self.ownship_data.get('longitude'),
-                     alt_press=self.ownship_data.get('altitude_press'), # Use parsed pressure altitude (NOT spoofed)
-                     misc=1, # Airborne (TODO: Make this dynamic based on ground speed?)
-                     nic=self.ownship_data.get('nic', 8 if self.ownship_data.get('gps_valid') else 0), # Use 8 if valid/spoofed, 0 if not
-                     nac_p=self.ownship_data.get('nac_p', 8 if self.ownship_data.get('gps_valid') else 0), # Use 8 if valid/spoofed, 0 if not
-                     ground_speed=self.ownship_data.get('speed'), # Use parsed or spoofed speed
-                     track=self.ownship_data.get('track'), # Use parsed or spoofed track
-                     vert_vel=self.ownship_data.get('vert_rate') # Still missing a source for this
-                 )
+                      lat=self.ownship_data.get('latitude'),
+                      lon=self.ownship_data.get('longitude'),
+                      alt_press=self.ownship_data.get('altitude_press'), # Use parsed pressure altitude (NOT spoofed)
+                      misc=1, # Airborne (TODO: Make this dynamic based on ground speed?)
+                      nic=self.ownship_data.get('nic', 8 if self.ownship_data.get('gps_valid') else 0), # Use 8 if valid/spoofed, 0 if not
+                      nac_p=self.ownship_data.get('nac_p', 8 if self.ownship_data.get('gps_valid') else 0), # Use 8 if valid/spoofed, 0 if not
+                      ground_speed=self.ownship_data.get('speed'), # Use parsed or spoofed speed
+                      track=self.ownship_data.get('track'), # Use parsed or spoofed track
+                      vert_vel=self.ownship_data.get('vert_rate'), # Still missing a source for this
+                      emitter_cat=1,  # Default to Light aircraft (1)
+                      callsign="OWNSHIP", # Default callsign
+                      code=0  # Default priority code
+                  )
                  if ownship_report_msg:
                      self.send_message(ownship_report_msg)
                  last_ownship_report_time = now # Update time

@@ -6,6 +6,7 @@ import time
 import threading
 import queue
 import socket
+import json
 import serial.tools.list_ports
 
 # Import the run functions from our modules
@@ -52,8 +53,10 @@ def main():
     parser.add_argument('--udp-broadcast-ip', default='255.255.255.255', help='UDP broadcast IP address (default: 255.255.255.255)')
     parser.add_argument('--interface', type=str, help='Network interface to bind to (e.g., eth0, wlan0)')
 
-    # Add spoofing argument
-    parser.add_argument('--spoof-gps', action='store_true', help='Spoof GPS data (lat, lon, speed, track, validity) for testing.')
+    # Add spoofing arguments
+    spoof_group = parser.add_argument_group('GPS Spoofing Options')
+    spoof_group.add_argument('--spoof-gps', action='store_true', help='Spoof GPS data (lat, lon, speed, track, validity) for testing.')
+    spoof_group.add_argument('--location-file', type=str, help='Path to a JSON location configuration file for GPS spoofing.')
 
     # Utility Arguments
     parser.add_argument('--list-ports', action='store_true',

@@ -1,0 +1,12 @@
+{
+    "name": "Gold Coast Airport",
+    "description": "Coolangatta Airport (OOL), Gold Coast, Australia",
+    "latitude": -28.1644,
+    "longitude": 153.5047,
+    "altitude_geo": 20,
+    "altitude_press": 20,
+    "speed": 0,
+    "track": 0,
+    "vert_rate": 0,
+    "gps_valid": true
+}

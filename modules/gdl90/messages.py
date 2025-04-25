@@ -97,7 +97,7 @@ def create_heartbeat_message(gps_valid=False, maintenance_required=False, ident_
     return frame_message(payload)
 
 
-def create_ownship_report(lat, lon, alt_press, misc, nic, nac_p, ground_speed, track, vert_vel):
+def create_ownship_report(lat, lon, alt_press, misc, nic, nac_p, ground_speed, track, vert_vel, emitter_cat=1, callsign="", code=0):
     """
     Creates a GDL90 Ownship Report message (ID 0x0A).
     Requires ownship pressure altitude, position, velocity etc.
@@ -112,6 +112,9 @@ def create_ownship_report(lat, lon, alt_press, misc, nic, nac_p, ground_speed, t
         ground_speed (int): Ground speed in knots.
         track (int): True track in degrees (0-359).
         vert_vel (int): Vertical velocity in feet/minute (positive up).
+        emitter_cat (int): Emitter category (see GDL90 spec, e.g., 1=Light, default=1).
+        callsign (str): Callsign (up to 8 chars, default="").
+        code (int): Reserved field (0-15, typically 0, default=0).
         
     Returns:
         Complete framed GDL90 Ownship Report message
@@ -137,18 +140,64 @@ def create_ownship_report(lat, lon, alt_press, misc, nic, nac_p, ground_speed, t
     gs_bytes = encode_velocity(ground_speed)
     track_byte = encode_track_heading(track)
     vv_bytes = encode_vertical_velocity(vert_vel)
+    
+    # Encode callsign (8 bytes)
+    callsign_bytes = encode_callsign(callsign)
 
-    # Assemble the payload according to GDL90 Ownship Report spec (Table 6)
-    payload = bytearray([message_id])
-    payload.extend(lat_bytes)           # Bytes 2-4
-    payload.extend(lon_bytes)           # Bytes 5-7
-    payload.extend(alt_bytes)           # Bytes 8-9
-    payload.append(misc & 0xFF)         # Byte 10: Misc field
-    payload.append(nav_integrity_byte)  # Byte 11: NIC/NACp
-    payload.extend(gs_bytes)            # Bytes 12-13: Ground Speed
-    payload.extend(vv_bytes)            # Bytes 14-15: Vertical Velocity
-    payload.extend(track_byte)          # Byte 16: Track/Heading
-    # Payload length = 1 + 3 + 3 + 2 + 1 + 1 + 2 + 2 + 1 = 16 bytes
+    # Assemble the payload according to GDL90 Ownship Report spec (Table 6 & Figure 2)
+    # Total length must be 28 bytes including the Message ID.
+    payload = bytearray([message_id])         # Byte 1: Message ID (len=1)
+
+    # Byte 2: Status byte (Alert Status upper 4 bits=0, Address Type lower 4 bits=0 for Ownship)
+    payload.append(0x00)                      # Byte 2: Status (len=2)
+
+    # Bytes 3-5: Participant Address (ICAO). Use 0 for Ownship.
+    payload.append(0)                         # Byte 3: ICAO MSB (len=3)
+    payload.append(0)                         # Byte 4: ICAO middle (len=4)
+    payload.append(0)                         # Byte 5: ICAO LSB (len=5)
+
+    # Bytes 6-11: Position data
+    payload.extend(lat_bytes)                 # Bytes 6-8: Latitude (len=8)
+    payload.extend(lon_bytes)                 # Bytes 9-11: Longitude (len=11)
+
+    # Bytes 12-13: Altitude (12 bits) + Misc (4 bits)
+    # Need the raw 12-bit encoded altitude value before applying offset
+    encoded_alt_12bit = 0xFFF # Default to invalid
+    if alt_press is not None:
+        # Reverse the formula: Value = (Altitude_ft + 1000) / 25
+        encoded_alt_12bit = round((alt_press + 1000) / 25)
+        if not (0 <= encoded_alt_12bit <= 0xFFE): # Check valid range (0xFFF is invalid)
+            encoded_alt_12bit = 0xFFF
+
+    # Pack Altitude (upper 8 bits) into Byte 12
+    payload.append((encoded_alt_12bit >> 4) & 0xFF) # Byte 12 (len=12)
+    # Pack Altitude (lower 4 bits) + Misc (lower 4 bits) into Byte 13
+    byte13 = ((encoded_alt_12bit & 0x0F) << 4) | (misc & 0x0F)
+    payload.append(byte13)                    # Byte 13 (len=13)
+
+    # Byte 14: Navigation/accuracy info
+    payload.append(nav_integrity_byte)        # Byte 14: NIC/NACp (len=14)
+
+    # Bytes 15-19: Velocity information
+    payload.extend(gs_bytes)                  # Bytes 15-16: Ground Speed (len=16)
+    payload.extend(vv_bytes)                  # Bytes 17-18: Vertical Velocity (len=18)
+    payload.extend(track_byte)                # Byte 19: Track/Heading (len=19)
+
+    # Byte 20: Emitter Category
+    payload.append(emitter_cat & 0xFF)        # Byte 20: Emitter Category (len=20)
+
+    # Bytes 21-28: Callsign (8 bytes)
+    payload.extend(callsign_bytes)            # Bytes 21-28: Callsign (len=28)
+
+    # Note: The Emergency/Priority code ('code' arg) is not explicitly placed
+    # as a separate byte in the 28-byte structure according to Figure 2.
+    # It might be implicitly part of the 'misc' field or other status bits
+    # depending on the exact interpretation, but we adhere to the 28-byte total.
+
+    # Ensure the final payload is exactly 28 bytes before framing
+    if len(payload) != 28:
+       # This check ensures our manual packing logic is correct.
+       raise ValueError(f"Internal Error: Ownship report payload length is {len(payload)}, expected 28")
 
     return frame_message(bytes(payload))
 
