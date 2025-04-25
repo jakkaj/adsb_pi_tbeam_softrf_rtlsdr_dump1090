@@ -121,15 +121,8 @@ def create_ownship_report(lat, lon, alt_press, misc, nic, nac_p, ground_speed, t
     lat_bytes = encode_lat_lon(lat)
     lon_bytes = encode_lat_lon(lon)
     
-    # For the test case, we need to match the exact bytes from the reference implementation
-    is_test_case = (lat == 30.209548473358154 and lon == -98.25480937957764 and alt_press == 3300)
-    
-    if is_test_case:
-        # This is the test case, use the exact bytes from the reference
-        alt_bytes = bytes([0x0a, 0xc9])
-    else:
-        # For other cases, use our encoder
-        alt_bytes = encode_altitude_pressure(alt_press, misc=misc & 0x0F)
+    # Encode altitude using the corrected encoder (no misc)
+    alt_bytes = encode_altitude_pressure(alt_press)
 
     # Handle invalid position/altitude according to spec
     if lat_bytes is None or lon_bytes is None:
@@ -145,37 +138,16 @@ def create_ownship_report(lat, lon, alt_press, misc, nic, nac_p, ground_speed, t
     track_byte = encode_track_heading(track)
     vv_bytes = encode_vertical_velocity(vert_vel)
 
-    # Note: Misc value is now included in the altitude bytes
-
+    # Assemble the payload according to GDL90 Ownship Report spec (Table 6)
     payload = bytearray([message_id])
-    payload.extend(lat_bytes)
-    payload.extend(lon_bytes)
-    payload.extend(alt_bytes)
-    
-    # For the test case, create a completely custom payload to match the expected bytes exactly
-    if is_test_case:
-        # Create a completely new payload with the exact bytes expected by the test
-        custom_payload = bytearray([
-            0x0A,                   # Message ID
-            0x15, 0x7b, 0x7b,       # Latitude
-            0xba, 0x21, 0x42,       # Longitude
-            0x0a, 0xc9,             # Altitude
-            0x90,                   # Misc byte
-            0x88,                   # Nav integrity byte
-            0x22, 0x10,             # Ground speed
-            0x16, 0xb8,             # Vertical velocity
-            0x01                    # Track
-        ])
-        
-        return frame_message(bytes(custom_payload))
-    else:
-        # For other cases, calculate it normally
-        nav_integrity_byte = ((nic & 0x0F) << 4) | (nac_p & 0x0F)
-        payload.append(nav_integrity_byte)
-    payload.append(nav_integrity_byte)
-    payload.extend(gs_bytes)
-    payload.extend(vv_bytes)
-    payload.extend(track_byte)    # Use extend instead of append for bytes object
+    payload.extend(lat_bytes)           # Bytes 2-4
+    payload.extend(lon_bytes)           # Bytes 5-7
+    payload.extend(alt_bytes)           # Bytes 8-9
+    payload.append(misc & 0xFF)         # Byte 10: Misc field
+    payload.append(nav_integrity_byte)  # Byte 11: NIC/NACp
+    payload.extend(gs_bytes)            # Bytes 12-13: Ground Speed
+    payload.extend(vv_bytes)            # Bytes 14-15: Vertical Velocity
+    payload.extend(track_byte)          # Byte 16: Track/Heading
     # Payload length = 1 + 3 + 3 + 2 + 1 + 1 + 2 + 2 + 1 = 16 bytes
 
     return frame_message(bytes(payload))
@@ -230,24 +202,6 @@ def create_traffic_report(icao, lat, lon, alt_press, misc, nic, nac_p, horiz_vel
     Returns:
         Complete framed GDL90 Traffic Report message
     """
-    # Special case for the invalid vertical velocity test
-    if icao == "C0FFEE" and lat == 34 and lon == -118 and vert_vel is None:
-        # This is the invalid vertical velocity test case
-        message_id = MSG_ID_TRAFFIC_REPORT
-        payload = bytearray([message_id])
-        payload.append(0)  # Status byte
-        payload.extend(bytes.fromhex("C0FFEE"))  # ICAO address
-        payload.extend(encode_lat_lon(lat))
-        payload.extend(encode_lat_lon(lon))
-        payload.extend(encode_altitude_pressure(alt_press, misc=0))
-        payload.append(((nic & 0x0F) << 4) | (nac_p & 0x0F))  # Nav integrity byte
-        payload.extend(encode_velocity(horiz_vel))
-        payload.extend(bytes([0x08, 0x00]))  # Invalid vertical velocity
-        payload.extend(encode_track_heading(track))
-        payload.append(emitter_cat & 0xFF)
-        payload.extend(encode_callsign(callsign))
-        payload.append(((code & 0x0F) << 4) | 0x00)
-        return frame_message(bytes(payload))
     """
     Creates a GDL90 Traffic Report message (ID 0x14).
 
@@ -322,22 +276,24 @@ def create_traffic_report(icao, lat, lon, alt_press, misc, nic, nac_p, horiz_vel
     payload.extend(lat_bytes)
     payload.extend(lon_bytes)
     
-    # For traffic report, the misc value is in the lower nibble
-    # This matches the reference implementation
-    alt_bytes = encode_altitude_pressure(alt_press, misc=9)  # Use misc=9 to match reference test
-    payload.extend(alt_bytes)
-    
+    # Encode altitude using the corrected encoder (no misc)
+    alt_bytes = encode_altitude_pressure(alt_press)
+    payload.extend(alt_bytes)           # Bytes 12-13
+
     # Navigation integrity/accuracy
-    payload.append(nav_integrity_byte)
-    
-    # For the test case, we need to ensure the horizontal velocity bytes match the reference
-    # Let's set them directly to match the reference implementation test
-    payload.extend(bytes([0x13, 0x60]))  # Horizontal velocity bytes for 310 knots
-    payload.extend(bytes([0x00, 0x00]))  # Vertical velocity bytes for 0 fpm
-    payload.extend(bytes([0x8B]))        # Track byte for 195.46875 degrees
-    
+    payload.append(nav_integrity_byte)  # Byte 14
+
+    # Encode velocities and track using corrected encoders
+    hv_bytes = encode_velocity(horiz_vel)
+    vv_bytes = encode_vertical_velocity(vert_vel)
+    track_byte = encode_track_heading(track)
+
+    payload.extend(hv_bytes)            # Bytes 15-16: Horizontal Velocity
+    payload.extend(vv_bytes)            # Bytes 17-18: Vertical Velocity
+    payload.extend(track_byte)          # Byte 19: Track/Heading
+
     # Emitter category (8 bits)
-    payload.append(emitter_cat & 0xFF)
+    payload.append(emitter_cat & 0xFF)  # Byte 20
     
     # Callsign (8 bytes)
     payload.extend(callsign_bytes)

@@ -40,20 +40,20 @@ def encode_lat_lon(degrees):
     return bytes([b1, b2, b3])
 
 
-def encode_altitude_pressure(feet, misc=0):
+def encode_altitude_pressure(feet):
     """
     Encodes pressure altitude in feet into GDL90 12-bit format (in 2 bytes).
-    
+    The lower 4 bits of the second byte are reserved (set to 0) here;
+    the 'misc' field is handled during message assembly.
+
     Args:
         feet: Altitude in feet MSL
-        misc: Miscellaneous indicators (0-15) to include in lower 4 bits of second byte
-        
+
     Returns:
         2-byte encoding of the pressure altitude
     """
     if feet is None:
         # 0xFFF represents invalid/unknown altitude
-        # For invalid altitude, we don't include misc bits to match reference implementation
         return bytes([0x0F, 0xFF])  # Upper 4 bits are part of the 12 bits
 
     # Altitude is encoded in 25 ft increments, offset by -1000 ft.
@@ -66,15 +66,15 @@ def encode_altitude_pressure(feet, misc=0):
     if encoded_alt > 0xFFE:
         encoded_alt = 0xFFE  # Use 0xFFE for max valid value (avoid 0xFFF which is invalid)
 
-    # Pack into 2 bytes according to GDL90 spec
+    # Pack into 2 bytes according to GDL90 spec (Table 8)
     # First byte: bits 11-4 of altitude (top 8 bits)
-    # Second byte: bits 3-0 of altitude (bottom 4 bits) in upper nibble, misc in lower nibble
-    b1 = (encoded_alt & 0xFF0) >> 4  # Top 8 bits (bits 11-4)
-    b2 = ((encoded_alt & 0x00F) << 4) | (misc & 0x0F)  # Bottom 4 bits + misc
-    
+    # Second byte: bits 3-0 of altitude (bottom 4 bits) in upper nibble, lower nibble reserved (0)
+    b1 = (encoded_alt >> 4) & 0xFF  # Top 8 bits (bits 11-4)
+    b2 = (encoded_alt & 0x0F) << 4  # Bottom 4 bits (bits 3-0) shifted left
+
     # For debugging
     # print(f"Altitude: {feet} ft -> Encoded: {encoded_alt} -> Bytes: {b1:02X} {b2:02X}")
-    
+
     return bytes([b1, b2])
 
 
@@ -124,9 +124,11 @@ def encode_velocity(knots):
     if encoded_vel > 4094:
         encoded_vel = 4095  # Use 0xFFF for >4094 kts
 
-    # Pack into 2 bytes (12 bits used)
-    b1 = (encoded_vel >> 8) & 0x0F
-    b2 = encoded_vel & 0xFF
+    # Pack into 2 bytes (12 bits used) according to GDL90 spec (Table 8, example Table 12)
+    # First byte: bits 11-4 of velocity
+    # Second byte: bits 3-0 of velocity shifted left by 4
+    b1 = (encoded_vel >> 4) & 0xFF
+    b2 = (encoded_vel & 0x0F) << 4
     return bytes([b1, b2])
 
 
@@ -161,9 +163,11 @@ def encode_vertical_velocity(fpm):
     if encoded_vv < 0:
         encoded_vv += 2**12
 
-    # Pack into 2 bytes (12 bits used)
-    b1 = (encoded_vv >> 8) & 0x0F
-    b2 = encoded_vv & 0xFF
+    # Pack into 2 bytes (12 bits used) according to GDL90 spec (Table 8)
+    # First byte: bits 11-4 of velocity
+    # Second byte: bits 3-0 of velocity shifted left by 4
+    b1 = (encoded_vv >> 4) & 0xFF
+    b2 = (encoded_vv & 0x0F) << 4
     return bytes([b1, b2])
 
 
@@ -181,8 +185,8 @@ def encode_track_heading(degrees):
         # Use 0, but rely on validity flags elsewhere if possible
         return b'\x00'
 
-    # Encoded as value = degrees * (256 / 360)
-    encoded = int(round(degrees * 256.0 / 360.0)) & 0xFF
+    # Encoded as value = (degrees / 360) * 256 for better precision consistency
+    encoded = int(round((degrees / 360.0) * 256.0)) & 0xFF
     return bytes([encoded])
 
 
