@@ -15,6 +15,7 @@ import threading
 import os
 import json
 from datetime import datetime, timezone
+import logging
 
 # Constants for position calculations
 EARTH_RADIUS_NM = 3440.065  # Earth radius in nautical miles
@@ -29,7 +30,7 @@ def run_generator(args, data_queue, stop_event):
     """
     generator = SampleTrafficGenerator(args, data_queue, stop_event)
     generator.run()
-    print("Sample Traffic Generator Thread: Exiting.")
+    logging.info("Sample Traffic Generator Thread: Exiting.")
 
 
 class SampleTrafficGenerator:
@@ -64,8 +65,8 @@ class SampleTrafficGenerator:
         # Initialize aircraft
         self.aircraft = self._initialize_aircraft()
         
-        print(f"Sample Traffic Generator: Initialized with {len(self.aircraft)} aircraft")
-        print(f"Sample Traffic Generator: Pattern size = {self.pattern_size} NM")
+        logging.info(f"Sample Traffic Generator: Initialized with {len(self.aircraft)} aircraft")
+        logging.info(f"Sample Traffic Generator: Pattern size = {self.pattern_size} NM")
     
     def _initialize_aircraft(self):
         """
@@ -139,7 +140,7 @@ class SampleTrafficGenerator:
     
     def run(self):
         """Main loop to generate and update traffic"""
-        print("Sample Traffic Generator: Starting run loop")
+        logging.info("Sample Traffic Generator: Starting run loop")
         
         # Initial delay to let other threads start
         time.sleep(2)
@@ -156,7 +157,7 @@ class SampleTrafficGenerator:
                 # Send aircraft data to queue
                 self._send_aircraft_data()
             else:
-                print("Sample Traffic Generator: Waiting for valid ownship position")
+                logging.info("Sample Traffic Generator: Waiting for valid ownship position")
             
             # Sleep to control update rate
             time.sleep(1.0)
@@ -182,13 +183,13 @@ class SampleTrafficGenerator:
                 self.ownship_data['altitude_geo'] = location_data.get('altitude_geo')
                 
                 if not hasattr(self, 'location_loaded'):
-                    print(f"Sample Traffic Generator: Using location from {location_file}")
-                    print(f"  Location: {location_data.get('name', 'Unknown')}: {location_data.get('description', 'No description')}")
+                    logging.info(f"Sample Traffic Generator: Using location from {location_file}")
+                    logging.info(f"  Location: {location_data.get('name', 'Unknown')}: {location_data.get('description', 'No description')}")
                     self.location_loaded = True
                     
             except Exception as e:
-                print(f"Sample Traffic Generator: Error loading location file {location_file}: {e}")
-                print("Falling back to default spoofed values")
+                logging.error(f"Sample Traffic Generator: Error loading location file {location_file}: {e}")
+                logging.info("Falling back to default spoofed values")
                 self._use_default_location()
         
         elif spoof_gps_enabled:
@@ -196,11 +197,11 @@ class SampleTrafficGenerator:
             self._use_default_location()
             
             if not hasattr(self, 'location_loaded'):
-                print("Sample Traffic Generator: Using default spoofed location (Brisbane)")
+                logging.info("Sample Traffic Generator: Using default spoofed location (Brisbane)")
                 self.location_loaded = True
         else:
-            print("Sample Traffic Generator: Warning - No location source available.")
-            print("Sample Traffic Generator: Using default location (Brisbane) for test traffic.")
+            logging.warning("Sample Traffic Generator: Warning - No location source available.")
+            logging.info("Sample Traffic Generator: Using default location (Brisbane) for test traffic.")
             self._use_default_location()
     
     def _use_default_location(self):
@@ -221,7 +222,7 @@ class SampleTrafficGenerator:
             Tuple of (latitude, longitude)
         """
         if self.ownship_data['latitude'] is None or self.ownship_data['longitude'] is None:
-            print(f"Sample Traffic Generator: Unable to calculate position - ownship position unknown")
+            logging.error("Sample Traffic Generator: Unable to calculate position - ownship position unknown")
             return None, None
         
         # Center position
@@ -265,7 +266,7 @@ class SampleTrafficGenerator:
         Update each aircraft's position based on pattern direction and elapsed time.
         """
         current_time = time.time()
-        print(f"Sample Traffic Generator: Updating positions with center at lat={self.ownship_data['latitude']}, lon={self.ownship_data['longitude']}")
+        logging.debug(f"Sample Traffic Generator: Updating positions with center at lat={self.ownship_data['latitude']}, lon={self.ownship_data['longitude']}")
         
         for aircraft in self.aircraft:
             # Calculate time elapsed since last update
@@ -292,9 +293,9 @@ class SampleTrafficGenerator:
             
             # Debug output
             if aircraft['lat'] is not None and aircraft['lon'] is not None:
-                print(f"Sample Traffic: {aircraft['id']} at lat={aircraft['lat']:.6f}, lon={aircraft['lon']:.6f}, alt={aircraft['altitude']:.1f}")
+                logging.debug(f"Sample Traffic: {aircraft['id']} at lat={aircraft['lat']:.6f}, lon={aircraft['lon']:.6f}, alt={aircraft['altitude']:.1f}")
             else:
-                print(f"Sample Traffic: {aircraft['id']} position calculation failed")
+                logging.warning(f"Sample Traffic: {aircraft['id']} position calculation failed")
     
     def _send_aircraft_data(self):
         """
@@ -304,7 +305,7 @@ class SampleTrafficGenerator:
         for aircraft in self.aircraft:
             # Skip aircraft without calculated positions
             if aircraft['lat'] is None or aircraft['lon'] is None:
-                print(f"Sample Traffic: Skipping {aircraft['id']} - invalid position")
+                logging.warning(f"Sample Traffic: Skipping {aircraft['id']} - invalid position")
                 continue
             
             # Format data for queue, matching adsb_client structure + adding defaults
@@ -331,49 +332,55 @@ class SampleTrafficGenerator:
                 self.data_queue.put(data, block=False)
                 traffic_count += 1
             except queue.Full:
-                print(f"Sample Traffic: Queue full, unable to send {aircraft['id']}")
+                logging.warning(f"Sample Traffic: Queue full, unable to send {aircraft['id']}")
                 # Skip if queue is full
                 pass
         
         if traffic_count > 0:
-            print(f"Sample Traffic: Sent {traffic_count} aircraft to queue")
+            logging.info(f"Sample Traffic: Sent {traffic_count} aircraft to queue")
         else:
-            print("Sample Traffic: WARNING - No aircraft data sent to queue")
+            logging.warning("Sample Traffic: WARNING - No aircraft data sent to queue")
 
 
 # For testing the module directly
 if __name__ == '__main__':
-    print("Testing Sample Traffic Generator Module...")
-    
+    import logging
+
+    logging.basicConfig(
+        level=logging.DEBUG,
+        format="%(asctime)s %(levelname)s: %(message)s"
+    )
+    logging.info("Testing Sample Traffic Generator Module...")
+
     # Mock args for testing
     class Args:
         spoof_gps = True
         sample_traffic_distance = 5.0
-    
+
     test_queue = queue.Queue()
     test_stop_event = threading.Event()
-    
+
     # Start the generator in a thread
     generator_thread = threading.Thread(
-        target=run_generator, 
+        target=run_generator,
         args=(Args(), test_queue, test_stop_event),
         daemon=True
     )
     generator_thread.start()
-    
+
     # Simulate running for a while and then stopping
     try:
-        print("Generator running for 30 seconds...")
+        logging.info("Generator running for 30 seconds...")
         start_time = time.time()
         while time.time() - start_time < 30:
             try:
                 data = test_queue.get(timeout=1)
-                print(f"Received traffic data: {data['icao']} at {data['latitude']:.4f}, {data['longitude']:.4f}, alt={data['altitude']}")
+                logging.info(f"Received traffic data: {data['icao']} at {data['latitude']:.4f}, {data['longitude']:.4f}, alt={data['altitude']}")
             except queue.Empty:
                 pass
     except KeyboardInterrupt:
-        print("\nStopping test...")
+        logging.info("Stopping test...")
     finally:
         test_stop_event.set()
         generator_thread.join(timeout=2)
-        print("Test finished.")
+        logging.info("Test finished.")

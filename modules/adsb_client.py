@@ -4,6 +4,7 @@ import time
 import queue
 import threading
 from datetime import datetime
+import logging
 
 class AdsbClient(TcpClient):
     """
@@ -18,7 +19,7 @@ class AdsbClient(TcpClient):
         self._thread = None
         # Add state for CPR decoding, keyed by ICAO
         self.cpr_data = {}
-        print(f"ADS-B Client: Connecting to {host}:{port}...")
+        logging.info(f"ADS-B Client: Connecting to {host}:{port}...")
 
     def handle_messages(self, messages):
         """
@@ -26,12 +27,12 @@ class AdsbClient(TcpClient):
         """
         # --- Add print statement to see raw messages received by the handler ---
         for msg, ts in messages:
-            print(f"ADS-B Raw Handled: '{msg}' (len={len(msg)}) @ {ts}")
+            logging.debug(f"ADS-B Raw Handled: '{msg}' (len={len(msg)}) @ {ts}")
         # --- End of added print statement ---
 
         for raw_msg, ts in messages:
             if self.stop_event.is_set():
-                print("ADS-B Client: Stop event received, stopping message handling.")
+                logging.info("ADS-B Client: Stop event received, stopping message handling.")
                 # Signal the client to stop receiving more data
                 if hasattr(self, 'stop'): # Check if stop method exists
                     self.stop()
@@ -46,7 +47,7 @@ class AdsbClient(TcpClient):
                 try:
                     msg = msg.decode('ascii')[1:-1]
                 except UnicodeDecodeError:
-                    print(f"ADS-B Decode Error: Could not decode '{raw_msg}' as ASCII")
+                    logging.error(f"ADS-B Decode Error: Could not decode '{raw_msg}' as ASCII")
                     continue
 
             # Now perform checks on the potentially stripped message 'msg'
@@ -61,7 +62,7 @@ class AdsbClient(TcpClient):
 
             if pms.crc(msg) != 0: # Check CRC
                 # Add print statement here to see if CRC is failing
-                print(f"ADS-B CRC Failed: {msg}")
+                logging.debug(f"ADS-B CRC Failed: {msg}")
                 continue
 
             # If we reach here, it's a DF17 message with a valid CRC.
@@ -76,11 +77,11 @@ class AdsbClient(TcpClient):
                     if callsign:
                         aircraft_data['callsign'] = callsign.strip('_')
                 elif 9 <= tc <= 18: # Airborne Position (with Baro Altitude)
-                    print(f"DEBUG: Processing TC {tc} for {icao}") # Added Debug
+                    logging.debug(f"Processing TC {tc} for {icao}")
                     alt = pms.adsb.altitude(msg)
                     if alt is not None:
                         aircraft_data['altitude'] = alt # Altitude in feet
-                        print(f"DEBUG: Decoded Altitude: {alt} for {icao}") # Added Debug
+                        logging.debug(f"Decoded Altitude: {alt} for {icao}")
                     # Decode NIC and NACp if available
                     # NIC/NACp cannot be reliably decoded from TC 9-18 using standard pyModeS functions.
                     # Broadcaster will use default (0) if not updated by other message types (e.g., TC28-31).
@@ -98,7 +99,7 @@ class AdsbClient(TcpClient):
                     oe_flag = pms.adsb.oe_flag(msg)
                     frame_type = 'even' if oe_flag == 0 else 'odd'
                     self.cpr_data[icao][frame_type] = {'ts': ts, 'msg': msg}
-                    print(f"DEBUG: Stored {frame_type} frame for {icao} at {ts}") # Added Debug
+                    logging.debug(f"Stored {frame_type} frame for {icao} at {ts}")
 
                     # Check if we have a recent pair
                     odd_frame = self.cpr_data[icao]['odd']
@@ -110,16 +111,16 @@ class AdsbClient(TcpClient):
                         msg_odd = odd_frame['msg']
                         msg_even = even_frame['msg']
 
-                        print(f"DEBUG: Found pair for {icao}. Odd: {t_odd}, Even: {t_even}") # Added Debug
+                        logging.debug(f"Found pair for {icao}. Odd: {t_odd}, Even: {t_even}")
                         # Check if the pair is recent enough (e.g., within 10 seconds)
                         if abs(t_odd - t_even) < 10.0:
                             # Attempt to decode position
-                            print(f"DEBUG: Attempting position decode for {icao}") # Added Debug
+                            logging.debug(f"Attempting position decode for {icao}")
                             position = pms.adsb.position(msg_even, msg_odd, t_even, t_odd)
                             if position:
                                 aircraft_data['latitude'] = position[0]
                                 aircraft_data['longitude'] = position[1]
-                                print(f"DEBUG: Position Decoded: {position} for {icao}") # Added Debug
+                                logging.debug(f"Position Decoded: {position} for {icao}")
                                 # Optional: Clear the used frames to prevent re-computation
                                 # self.cpr_data[icao] = {'odd': None, 'even': None}
 
@@ -137,9 +138,9 @@ class AdsbClient(TcpClient):
                 if len(aircraft_data) > 3:
                     # Print the decoded data to the console for visibility
                     timestamp_str = aircraft_data['timestamp'].strftime("%H:%M:%S.%f")[:-3]
-                    print(f"ADS-B Decoded [{timestamp_str}]: {aircraft_data}")
+                    logging.info(f"ADS-B Decoded [{timestamp_str}]: {aircraft_data}")
                     try:
-                        print(f"DEBUG adsb_client queue input: {aircraft_data}")
+                        logging.debug(f"adsb_client queue input: {aircraft_data}")
                         self.data_queue.put(aircraft_data, block=False)
                     except queue.Full:
                         # Handle queue full scenario if necessary, e.g., log a warning
@@ -149,29 +150,29 @@ class AdsbClient(TcpClient):
 
             except Exception as e:
                 # Print specific errors during decoding
-                print(f"ADS-B Client: ERROR decoding TC {tc} for {icao}: {e}")
+                logging.error(f"ADS-B Client: ERROR decoding TC {tc} for {icao}: {e}")
                 import traceback
-                traceback.print_exc() # Print full traceback for debugging
+                logging.debug(traceback.format_exc()) # Print full traceback for debugging
                 pass # Continue processing other messages
 
     def run(self):
         """Calls the parent TcpClient's run method to handle socket operations."""
-        print("ADS-B Client: Starting run loop.")
+        logging.info("ADS-B Client: Starting run loop.")
         try:
             # Call the parent class's run method which handles socket connection and data reading
             # The parent's run method should handle the stop_event internally or through exceptions.
             super().run()
         except ConnectionRefusedError:
             # This might be caught by the parent, but added here for clarity if needed.
-            print(f"ADS-B Client: Connection refused to {self.host}:{self.port}")
+            logging.error(f"ADS-B Client: Connection refused to {self.host}:{self.port}")
         except OSError as e:
-             print(f"ADS-B Client: Socket error during run: {e}")
+             logging.error(f"ADS-B Client: Socket error during run: {e}")
         except Exception as e:
             # Catch any other unexpected errors during the parent's run execution
-            print(f"ADS-B Client: Unexpected error in run method: {e}")
+            logging.error(f"ADS-B Client: Unexpected error in run method: {e}")
         finally:
             # This block executes whether the try block succeeded or failed.
-            print("ADS-B Client: Run loop finished.")
+            logging.info("ADS-B Client: Run loop finished.")
             # Ensure stop is called to clean up resources if the parent's run exits.
             if hasattr(self, 'stop'):
                 self.stop()
@@ -181,22 +182,22 @@ class AdsbClient(TcpClient):
         if self._thread is None or not self._thread.is_alive():
             self._thread = threading.Thread(target=self.run, daemon=True)
             self._thread.start()
-            print("ADS-B Client: Thread started.")
+            logging.info("ADS-B Client: Thread started.")
         else:
-            print("ADS-B Client: Thread already running.")
+            logging.info("ADS-B Client: Thread already running.")
 
     def stop(self):
         """Safely stop the client and close the socket if it exists."""
-        print("ADS-B Client: Stopping...")
+        logging.info("ADS-B Client: Stopping...")
         self.stop_event.set() # Signal threads using this event
         if self.socket:
             try:
                 self.socket.close()
-                print("ADS-B Client: Socket closed.")
+                logging.info("ADS-B Client: Socket closed.")
             except Exception as e:
-                print(f"ADS-B Client: Error closing socket: {e}")
+                logging.error(f"ADS-B Client: Error closing socket: {e}")
         else:
-            print("ADS-B Client: No socket to close.")
+            logging.info("ADS-B Client: No socket to close.")
         # Call the superclass stop if necessary, though it might be redundant now
         # super().stop() # Be cautious if the superclass method has side effects
 
@@ -219,13 +220,13 @@ def run_client(args, data_queue, stop_event):
             client.run() # This will block until stop_event is set or connection fails
 
         except ConnectionRefusedError:
-            print(f"ADS-B Main: Connection refused to {args.dump1090_host}:{args.dump1090_port}. Retrying in 10 seconds...")
+            logging.error(f"ADS-B Main: Connection refused to {args.dump1090_host}:{args.dump1090_port}. Retrying in 10 seconds...")
         except OSError as e:
-             print(f"ADS-B Main: OS Error connecting to dump1090: {e}. Retrying in 10 seconds...")
+             logging.error(f"ADS-B Main: OS Error connecting to dump1090: {e}. Retrying in 10 seconds...")
         except Exception as e:
-            print(f"ADS-B Main: Error running client: {e}")
+            logging.error(f"ADS-B Main: Error running client: {e}")
             # Avoid rapid restarts on persistent errors
-            print("ADS-B Main: Unexpected error. Retrying in 10 seconds...")
+            logging.error("ADS-B Main: Unexpected error. Retrying in 10 seconds...")
 
         finally:
             # Ensure client was successfully initialized before trying to stop it
@@ -235,21 +236,31 @@ def run_client(args, data_queue, stop_event):
         if not stop_event.is_set():
             time.sleep(10) # Wait before retrying connection
 
-    print("ADS-B Client Thread: Exiting.")
+    logging.info("ADS-B Client Thread: Exiting.")
 
 # Example usage (for testing the module directly)
 if __name__ == '__main__':
-    print("Testing ADS-B Client Module...")
-    # Mock args for testing
-    class Args:
-        dump1090_host = '127.0.0.1'
-        dump1090_port = 30002
+    import argparse
+
+    parser = argparse.ArgumentParser(description="ADS-B Client Module")
+    parser.add_argument('--dump1090-host', type=str, default='127.0.0.1', help='dump1090 host')
+    parser.add_argument('--dump1090-port', type=int, default=30002, help='dump1090 port')
+    parser.add_argument('--debug', action='store_true', help='Enable debug output')
+    args = parser.parse_args()
+
+    log_level = logging.DEBUG if args.debug else logging.INFO
+    logging.basicConfig(
+        level=log_level,
+        format="%(asctime)s %(levelname)s: %(message)s"
+    )
 
     test_queue = queue.Queue()
     test_stop_event = threading.Event()
 
+    logging.info("Testing ADS-B Client Module...")
+
     # Start the client in a thread
-    client_thread = threading.Thread(target=run_client, args=(Args(), test_queue, test_stop_event))
+    client_thread = threading.Thread(target=run_client, args=(args, test_queue, test_stop_event))
     client_thread.start()
 
     # Simulate running for a while and then stopping
@@ -258,15 +269,15 @@ if __name__ == '__main__':
         while time.time() - start_time < 15: # Run for 15 seconds
             try:
                 data = test_queue.get(timeout=1)
-                print(f"Received data: {data}")
+                logging.info(f"Received data: {data}")
             except queue.Empty:
                 pass
             if not client_thread.is_alive():
-                 print("Client thread terminated unexpectedly.")
-                 break
+                logging.error("Client thread terminated unexpectedly.")
+                break
     except KeyboardInterrupt:
-        print("\nStopping test...")
+        logging.info("Stopping test...")
     finally:
         test_stop_event.set()
         client_thread.join(timeout=5) # Wait for thread to finish
-        print("Test finished.")
+        logging.info("Test finished.")

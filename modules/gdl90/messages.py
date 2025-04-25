@@ -7,6 +7,7 @@ ready for transmission.
 """
 import struct
 from datetime import datetime, timezone
+import logging
 
 from .constants import (
     MSG_ID_HEARTBEAT,
@@ -312,11 +313,13 @@ def create_traffic_report(icao, lat, lon, alt_press, misc_flags, nic, nac_p, hor
     callsign_bytes = encode_callsign(callsign)
     
     # --- Debug: Print input values ---
-    print(f"\nDEBUG create_traffic_report - Input values:")
-    print(f"  icao: {icao}, lat: {lat:.4f}, lon: {lon:.4f}")
-    print(f"  alt_press: {alt_press}, misc_flags: {misc_flags}, nic: {nic}, nac_p: {nac_p}")
-    print(f"  horiz_vel: {horiz_vel}, vert_vel: {vert_vel}, track: {track}")
-    print(f"  emitter_cat: {emitter_cat}, callsign: {callsign}")
+    logging.debug(
+        "create_traffic_report input: "
+        "icao=%s, lat=%.4f, lon=%.4f, alt_press=%s, misc_flags=%s, nic=%s, nac_p=%s, "
+        "horiz_vel=%s, vert_vel=%s, track=%s, emitter_cat=%s, callsign=%s",
+        icao, lat, lon, alt_press, misc_flags, nic, nac_p,
+        horiz_vel, vert_vel, track, emitter_cat, callsign
+    )
     # --- End Debug ---
 
     # Build the message payload

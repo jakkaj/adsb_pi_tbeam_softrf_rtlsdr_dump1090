@@ -6,6 +6,7 @@ import json
 import os
 from datetime import datetime, timezone
 from .gdl90 import create_heartbeat_message, create_ownship_report, create_ownship_geo_altitude, create_traffic_report
+import logging
 
 # Constants
 HEARTBEAT_INTERVAL = 1.0  # Send heartbeat every 1 second
@@ -23,7 +24,7 @@ class Broadcaster:
         self.ownship_data = {}
         # Add state for traffic data (dictionary keyed by ICAO hex)
         self.traffic_data = {}
-        print(f"Broadcaster: Initialized for {self.broadcast_address[0]}:{self.broadcast_address[1]}")
+        logging.info(f"Broadcaster: Initialized for {self.broadcast_address[0]}:{self.broadcast_address[1]}")
 
     def setup_socket(self):
         """Creates and configures the UDP broadcast socket."""
@@ -40,24 +41,24 @@ class Broadcaster:
                     # SO_BINDTODEVICE is Linux-specific and requires root privileges
                     # The value 25 is the socket option number for SO_BINDTODEVICE on Linux
                     self.sock.setsockopt(socket.SOL_SOCKET, 25, self.args.interface.encode())
-                    print(f"Broadcaster: Binding to interface: {self.args.interface}")
+                    logging.info(f"Broadcaster: Binding to interface: {self.args.interface}")
                 except PermissionError:
-                    print(f"Broadcaster: ERROR - Binding to interface {self.args.interface} requires root privileges")
+                    logging.error(f"Broadcaster: ERROR - Binding to interface {self.args.interface} requires root privileges")
                     return False
                 except Exception as e:
-                    print(f"Broadcaster: ERROR - Failed to bind to interface {self.args.interface}: {e}")
-                    print("Broadcaster: Continuing with default interface")
+                    logging.error(f"Broadcaster: ERROR - Failed to bind to interface {self.args.interface}: {e}")
+                    logging.info("Broadcaster: Continuing with default interface")
             
             # Set a timeout so the receive/send calls don't block indefinitely
             self.sock.settimeout(0.5)
-            print(f"Broadcaster: UDP Socket created for {self.broadcast_address}")
+            logging.info(f"Broadcaster: UDP Socket created for {self.broadcast_address}")
             return True
         except socket.error as e:
-            print(f"Broadcaster: Error creating socket: {e}")
+            logging.error(f"Broadcaster: Error creating socket: {e}")
             self.sock = None
             return False
         except Exception as e:
-            print(f"Broadcaster: Unexpected error setting up socket: {e}")
+            logging.error(f"Broadcaster: Unexpected error setting up socket: {e}")
             self.sock = None
             return False
 
@@ -75,18 +76,18 @@ class Broadcaster:
             # print(f"DEBUG: Sent {len(message_bytes)} bytes to {self.broadcast_address}") # Optional debug
             return True
         except socket.error as e:
-            print(f"Broadcaster: Socket error sending message: {e}")
+            logging.error(f"Broadcaster: Socket error sending message: {e}")
             # Consider closing/reopening socket on certain errors
             self.close_socket()
             return False
         except Exception as e:
-            print(f"Broadcaster: Unexpected error sending message: {e}")
+            logging.error(f"Broadcaster: Unexpected error sending message: {e}")
             return False
 
     def close_socket(self):
         """Closes the UDP socket."""
         if self.sock:
-            print("Broadcaster: Closing UDP socket.")
+            logging.info("Broadcaster: Closing UDP socket.")
             self.sock.close()
             self.sock = None
 
@@ -110,7 +111,7 @@ class Broadcaster:
                     
                     # Debug print for sample traffic
                     if data.get('source') == 'sample_traffic':
-                        print(f"Sample Traffic: {icao} at {data.get('latitude'):.4f}, {data.get('longitude'):.4f}, alt={data.get('altitude')}")
+                        logging.debug(f"Sample Traffic: {icao} at {data.get('latitude'):.4f}, {data.get('longitude'):.4f}, alt={data.get('altitude')}")
 
                     # After updating state, check if we have enough stored data to send a report
                     stored_lat = self.traffic_data[icao].get('latitude')
@@ -150,7 +151,7 @@ class Broadcaster:
                             # Consider adding rate limiting here if needed, but send for now
                             send_result = self.send_message(traffic_msg)
                             if data.get('source') == 'sample_traffic' and not send_result:
-                                print(f"Sample Traffic: Failed to send traffic message for {icao}")
+                                logging.warning(f"Sample Traffic: Failed to send traffic message for {icao}")
 
             elif data.get('source') == 'flarm':
                 # --- FLARM Processing ---
@@ -210,7 +211,7 @@ class Broadcaster:
                                     self.ownship_data['gps_valid'] = fix_quality > 0
                                 else:
                                     # If essential fields are missing, default to Gold Coast and mark GPS as invalid
-                                    print(f"FLARM Client: Missing essential GPS fields ({msg_type}). Defaulting to Gold Coast.")
+                                    logging.warning(f"FLARM Client: Missing essential GPS fields ({msg_type}). Defaulting to Gold Coast.")
                                     self.ownship_data['latitude'] = -28.016667
                                     self.ownship_data['longitude'] = 153.400000
                                     self.ownship_data['altitude_geo'] = None # Altitude is unknown if position is defaulted
@@ -220,7 +221,7 @@ class Broadcaster:
                                 self.ownship_data['last_gps_update'] = time.time()
                                 # print(f"DEBUG: Updated ownship position: Lat={self.ownship_data['latitude']:.4f}, Lon={self.ownship_data['longitude']:.4f}, AltGeo={self.ownship_data['altitude_geo']}")
                             except (ValueError, IndexError) as e:
-                                print(f"FLARM Client: Error parsing GPS data ({msg_type}): {e}")
+                                logging.error(f"FLARM Client: Error parsing GPS data ({msg_type}): {e}")
                         # GNRMC/GPRMC: Need index 1 (status), 6 (speed), 7 (track)
                         elif msg_type.endswith('RMC') and len(fields) >= 8:
                             try:
@@ -238,7 +239,7 @@ class Broadcaster:
                                     # Let's just not update for now.
                                     pass
                             except (ValueError, IndexError) as e:
-                                print(f"FLARM Client: Error parsing GPS data ({msg_type}): {e}")
+                                logging.error(f"FLARM Client: Error parsing GPS data ({msg_type}): {e}")
                         # PGRMZ: Need index 0 (altitude), 1 (unit)
                         elif msg_type == 'PGRMZ' and len(fields) >= 2:
                             try:
@@ -251,7 +252,7 @@ class Broadcaster:
                                     self.ownship_data['altitude_press'] = int(float(alt_str) * 3.28084)
                                     # print(f"DEBUG: Updated ownship pressure altitude (from meters): AltPress={self.ownship_data['altitude_press']}")
                             except (ValueError, IndexError) as e:
-                                print(f"FLARM Client: Error parsing Pressure Altitude data ({msg_type}): {e}")
+                                logging.error(f"FLARM Client: Error parsing Pressure Altitude data ({msg_type}): {e}")
                     # Handle other relevant FLARM messages (PFLAU, etc.) if needed
 
             self.data_queue.task_done() # Signal that the item is processed
@@ -260,7 +261,7 @@ class Broadcaster:
             # Queue is empty, nothing to do
             pass
         except Exception as e:
-            print(f"Broadcaster: Error processing data queue item: {e}")
+            logging.error(f"Broadcaster: Error processing data queue item: {e}")
             # Ensure task_done is called even if there's an error processing
             try:
                 self.data_queue.task_done()
@@ -270,9 +271,9 @@ class Broadcaster:
 
     def run(self):
         """Main loop for the broadcaster thread."""
-        print("Broadcaster: Starting run loop.")
+        logging.info("Broadcaster: Starting run loop.")
         if not self.setup_socket():
-            print("Broadcaster: Failed to setup socket. Thread exiting.")
+            logging.error("Broadcaster: Failed to setup socket. Thread exiting.")
             return
 
         last_ownship_report_time = 0
@@ -289,13 +290,13 @@ class Broadcaster:
             try:
                 with open(location_file, 'r') as f:
                     self.location_data = json.load(f)
-                print(f"*** Broadcaster: GPS Spoofing Enabled using location file: {location_file} ***")
-                print(f"*** Location: {self.location_data.get('name', 'Unknown')}: {self.location_data.get('description', 'No description')} ***")
+                logging.info(f"*** Broadcaster: GPS Spoofing Enabled using location file: {location_file} ***")
+                logging.info(f"*** Location: {self.location_data.get('name', 'Unknown')}: {self.location_data.get('description', 'No description')} ***")
             except Exception as e:
-                print(f"Error loading location file {location_file}: {e}")
-                print("Falling back to default spoofing values")
+                logging.error(f"Error loading location file {location_file}: {e}")
+                logging.info("Falling back to default spoofing values")
         elif spoof_gps_enabled:
-            print("*** Broadcaster: GPS Spoofing Enabled with default values ***")
+            logging.info("*** Broadcaster: GPS Spoofing Enabled with default values ***")
 
         while not self.stop_event.is_set():
             now = time.monotonic() # Use monotonic clock for intervals
@@ -306,13 +307,13 @@ class Broadcaster:
                 gps_valid_flag = True if spoof_gps_enabled else self.ownship_data.get('gps_valid', False)
                 # Print debugging info for the heartbeat
                 if spoof_gps_enabled:
-                    print(f"DEBUG: Sending heartbeat with GPS Valid = {gps_valid_flag}")
+                    logging.debug(f"Sending heartbeat with GPS Valid = {gps_valid_flag}")
                 heartbeat_msg = create_heartbeat_message(gps_valid=gps_valid_flag)
                 if not self.send_message(heartbeat_msg):
-                    print("Broadcaster: Heartbeat send failed. Attempting to reset socket...")
+                    logging.error("Broadcaster: Heartbeat send failed. Attempting to reset socket...")
                     self.close_socket()
                     if not self.setup_socket():
-                        print("Broadcaster: Failed to reset socket. Waiting before retry...")
+                        logging.error("Broadcaster: Failed to reset socket. Waiting before retry...")
                         time.sleep(5)
                         continue
                 self.last_heartbeat_time = now
@@ -368,7 +369,7 @@ class Broadcaster:
             if now - last_ownship_geo_alt_time >= 1.0 and 'altitude_geo' in self.ownship_data:
                 # Debug the altitude data being sent
                 if spoof_gps_enabled:
-                    print(f"DEBUG: Sending ownship geo altitude = {self.ownship_data.get('altitude_geo')} feet")
+                    logging.debug(f"Sending ownship geo altitude = {self.ownship_data.get('altitude_geo')} feet")
                 
                 # Ensure altitude_geo is not None by using explicit check
                 # This will ensure we don't send None to the encoder
@@ -397,7 +398,7 @@ class Broadcaster:
             time.sleep(0.02) # 50Hz loop approx
 
         self.close_socket()
-        print("Broadcaster: Run loop finished.")
+        logging.info("Broadcaster: Run loop finished.")
 
 
 # --- Function to be called by the main script ---
@@ -409,11 +410,16 @@ def run_broadcaster(args, data_queue, stop_event):
     """
     broadcaster = Broadcaster(args, data_queue, stop_event)
     broadcaster.run() # This method contains the main loop
-    print("Broadcaster Thread: Exiting.")
+    logging.info("Broadcaster Thread: Exiting.")
 
 # Example usage (for testing the module directly)
 if __name__ == '__main__':
-    print("Testing Broadcaster Module...")
+    import logging
+    logging.basicConfig(
+        level=logging.DEBUG,
+        format="%(asctime)s %(levelname)s: %(message)s"
+    )
+    logging.info("Testing Broadcaster Module...")
     # Mock args for testing
     class Args:
         udp_broadcast_ip = '127.0.0.1' # Broadcast to loopback for testing
@@ -433,13 +439,13 @@ if __name__ == '__main__':
     broadcaster_thread.start()
 
     # Let it run for a few seconds
-    print("Broadcaster running for 10 seconds... Check for UDP packets on 127.0.0.1:4000")
-    print("You can use tools like 'netcat' or 'wireshark' to listen: nc -ul 4000")
+    logging.info("Broadcaster running for 10 seconds... Check for UDP packets on 127.0.0.1:4000")
+    logging.info("You can use tools like 'netcat' or 'wireshark' to listen: nc -ul 4000")
     try:
         time.sleep(10)
     except KeyboardInterrupt:
-        print("\nStopping test...")
+        logging.info("Stopping test...")
     finally:
         test_stop_event.set()
         broadcaster_thread.join(timeout=2)
-        print("Test finished.")
+        logging.info("Test finished.")

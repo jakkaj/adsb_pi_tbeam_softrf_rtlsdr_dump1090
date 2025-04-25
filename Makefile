@@ -19,7 +19,7 @@ UDP_BROADCAST_IP ?= 255.255.255.255
 SCRIPT = gdl90_broadcaster.py
 
 # Phony targets (not actual files)
-.PHONY: help run run-spoof run-spoof-location run-spoof-location-brisbane run-sample-traffic run-sample-traffic-location run-tester run-receiver list-ports install-deps clean test
+.PHONY: help run run-spoof run-spoof-location run-spoof-location-brisbane run-sample-traffic run-sample-traffic-location run-tester run-receiver run-test-harness list-ports install-deps clean test
 
 help:
 	@echo "Makefile for GDL90 Broadcaster"
@@ -36,6 +36,7 @@ help:
 	@echo "  make run PORT=/dev/ttyUSB0  Run with a specific serial port"
 	@echo "  make run-tester     Run the GDL90 message tester/decoder (listens on UDP ${UDP_PORT})"
 	@echo "  make run-receiver   Run the GDL90 receiver to listen for messages (on UDP ${UDP_PORT})"
+	@echo "  make run-test-harness Run the combined broadcaster and receiver test harness"
 	@echo "  make test           Run unit tests for the GDL90 modules"
 	@echo "  make clean          Remove temporary Python files"
 	@echo ""
@@ -164,6 +165,13 @@ run-tester:
 run-receiver:
 	@echo "Starting GDL90 Receiver (listening on UDP port ${UDP_PORT})..."
 	$(PYTHON) sample/gdl90-sample/gdl90-master/gdl90_receiver.py --port ${UDP_PORT} --interface eth0 --bcast --verbose
+
+run-test-harness:
+	@echo "Starting GDL90 Test Harness (combined broadcaster and receiver)..."
+	@echo "  Location:    ${LOCATION}"
+	@echo "  UDP Port:    ${UDP_PORT}"
+	@echo "  Interface:   eth0"
+	$(PYTHON) gdl90_test_harness.py --location ${LOCATION} --port ${UDP_PORT} --interface eth0
 
 clean:
 	@echo "Cleaning up..."
