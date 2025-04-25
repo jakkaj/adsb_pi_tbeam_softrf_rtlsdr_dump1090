@@ -8,7 +8,7 @@
                 "--rm",
                 "--init",
                 "-v",
-                "/home/jak/github/PilotBuddy/.roo:/data",
+                "/home/jak/adsb_pi_thing/.roo:/data",
                 "mcp-knowledge-graph",
                 "node",
                 "dist/index.js",
