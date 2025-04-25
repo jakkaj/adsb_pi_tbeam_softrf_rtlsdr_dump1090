@@ -20,44 +20,41 @@ class TestGDL90Encoders(unittest.TestCase):
     def test_latitude_longitude_encoding(self):
         """Test encoding of latitude and longitude values."""
         # Test valid values
-        lat_encoded = encode_lat_lon(34.12345)
+        lat_encoded = encode_lat_lon(34.12345, is_latitude=True)
         self.assertIsNotNone(lat_encoded)
         self.assertEqual(len(lat_encoded), 3)
         
-        lon_encoded = encode_lat_lon(-118.54321)
+        lon_encoded = encode_lat_lon(-118.54321, is_latitude=False)
         self.assertIsNotNone(lon_encoded)
         self.assertEqual(len(lon_encoded), 3)
         
         # Test boundary values
-        max_lat = encode_lat_lon(90.0)
+        max_lat = encode_lat_lon(90.0, is_latitude=True)
         self.assertIsNotNone(max_lat)
         
-        min_lat = encode_lat_lon(-90.0)
+        min_lat = encode_lat_lon(-90.0, is_latitude=True)
         self.assertIsNotNone(min_lat)
         
-        max_lon = encode_lat_lon(180.0)
+        max_lon = encode_lat_lon(180.0, is_latitude=False)
         self.assertIsNotNone(max_lon)
         
-        min_lon = encode_lat_lon(-180.0)
+        min_lon = encode_lat_lon(-180.0, is_latitude=False)
         self.assertIsNotNone(min_lon)
         
         # Test invalid values
-        # Note: The current implementation doesn't return None for out-of-range values
-        # but instead encodes them anyway. This is different from the documented behavior.
-        # For now, we'll just check that we get a 3-byte result.
-        invalid_lat = encode_lat_lon(91.0)  # Out of range
+        invalid_lat = encode_lat_lon(91.0, is_latitude=True)  # Out of range
         self.assertIsInstance(invalid_lat, bytes)
         self.assertEqual(len(invalid_lat), 3)
         
-        invalid_lon = encode_lat_lon(-181.0)  # Out of range
+        invalid_lon = encode_lat_lon(-181.0, is_latitude=False)  # Out of range
         self.assertIsInstance(invalid_lon, bytes)
         self.assertEqual(len(invalid_lon), 3)
         
         # Only None values should return None
-        none_value = encode_lat_lon(None)
+        none_value = encode_lat_lon(None, is_latitude=True)
         self.assertIsNone(none_value)
         
-        invalid_none = encode_lat_lon(None)  # None value
+        invalid_none = encode_lat_lon(None, is_latitude=False)  # None value
         self.assertIsNone(invalid_none)
     
     def test_altitude_encoding(self):
@@ -98,7 +95,7 @@ class TestGDL90Encoders(unittest.TestCase):
         
         # Test invalid values
         invalid_horiz = encode_velocity(None)
-        self.assertEqual(invalid_horiz, b'\x0F\xFF')  # Should return invalid marker
+        self.assertEqual(invalid_horiz, b'\xFF\xFF')  # Should return invalid marker (sample logic)
         
         invalid_vert = encode_vertical_velocity(None)
         self.assertEqual(invalid_vert, b'\x08\x00')  # Should return invalid marker

@@ -121,8 +121,8 @@ def create_ownship_report(lat, lon, alt_press, misc, nic, nac_p, ground_speed, t
     """
     message_id = MSG_ID_OWNSHIP_REPORT
 
-    lat_bytes = encode_lat_lon(lat)
-    lon_bytes = encode_lat_lon(lon)
+    lat_bytes = encode_lat_lon(lat, is_latitude=True)
+    lon_bytes = encode_lat_lon(lon, is_latitude=False)
     
     # Encode altitude using the corrected encoder (no misc)
     alt_bytes = encode_altitude_pressure(alt_press)
@@ -290,8 +290,8 @@ def create_traffic_report(icao, lat, lon, alt_press, misc_flags, nic, nac_p, hor
         icao_int = icao if isinstance(icao, int) and 0 <= icao <= 0xFFFFFF else 0
     
     # Use shared encoder functions for lat/lon
-    lat_bytes = encode_lat_lon(lat)
-    lon_bytes = encode_lat_lon(lon)
+    lat_bytes = encode_lat_lon(lat, is_latitude=True)
+    lon_bytes = encode_lat_lon(lon, is_latitude=False)
     
     # Handle invalid position according to spec
     if lat_bytes is None or lon_bytes is None:

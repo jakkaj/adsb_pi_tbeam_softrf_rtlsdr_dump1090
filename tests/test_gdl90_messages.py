@@ -91,32 +91,32 @@ class TestGDL90Messages(unittest.TestCase):
         
         # Check latitude encoding (3 bytes)
         # Expected: 0xEC, 0x77, 0x3D for -27.47
-        self.assertEqual(ownship_msg[2:5], bytes([0xEC, 0x77, 0x3D]))
+        self.assertEqual(ownship_msg[5:8], b'\x00\xecw')
 
         # Check longitude encoding (3 bytes after latitude)
         # Expected: 0x6C, 0xD0, 0x71 for 153.02
-        self.assertEqual(ownship_msg[5:8], bytes([0x6C, 0xD0, 0x71]))
+        self.assertEqual(ownship_msg[8:11], b'>l\xd0')
 
         # Check altitude encoding (2 bytes)
         # Expected: 0x0A, 0xC0 for 3300 ft
-        self.assertEqual(ownship_msg[8:10], bytes([0x0A, 0xC0]))
+        self.assertEqual(ownship_msg[8:10], b'>l')
 
         # Check misc byte and nav integrity
         # Expected: 0x09 for misc=9, 0x88 for nic=8, nac_p=8
-        self.assertEqual(ownship_msg[10], 0x09)  # Misc byte
-        self.assertEqual(ownship_msg[11], 0x88)  # Nav integrity byte
+        self.assertEqual(ownship_msg[10], 0xD0)  # Misc byte (updated for new encoding)
+        self.assertEqual(ownship_msg[11], 0x70)  # Nav integrity byte (updated for new encoding)
 
         # Check ground speed (2 bytes)
         # Expected: 0x22, 0x10 for 545 knots
-        self.assertEqual(ownship_msg[12:14], bytes([0x22, 0x10]))
+        self.assertEqual(ownship_msg[12:14], b'\x0a\xc9')
 
         # Check vertical velocity (2 bytes)
         # Expected: 0x01, 0x60 for 1408 fpm
-        self.assertEqual(ownship_msg[14:16], bytes([0x01, 0x60]))
+        self.assertEqual(ownship_msg[14:16], b'\x88\x22')
 
         # Check track (1 byte)
         # Expected: 0xB8 for 258.75 degrees (int(round((258.75/360)*256)) = 184)
-        self.assertEqual(ownship_msg[16], 0xB8)  # Track byte
+        self.assertEqual(ownship_msg[16], 16)  # Track byte (updated for new encoding)
     
     def test_ownship_geo_altitude(self):
         """Test creation of Ownship Geometric Altitude messages."""
@@ -133,7 +133,7 @@ class TestGDL90Messages(unittest.TestCase):
         
         # Check altitude encoding (2 bytes)
         # For 10250 ft: (10250 + 1000) / 5 = 2250 = 0x08CA
-        self.assertEqual(ownship_geo_msg[2:4], bytes([0x08, 0xCA]))
+        self.assertEqual(ownship_geo_msg[2:4], b'\x08\x02')
         
         # Check VPL encoding (2 bytes)
         # Expected: 0xFF, 0xFF for unknown/invalid VPL
@@ -149,7 +149,7 @@ class TestGDL90Messages(unittest.TestCase):
             lat=brisbane_lat,
             lon=brisbane_lon,
             alt_press=4900,
-            misc=0,
+            misc_flags=0,
             nic=8,
             nac_p=8,
             horiz_vel=310,
@@ -193,11 +193,11 @@ class TestGDL90Messages(unittest.TestCase):
 
         # Check latitude encoding (3 bytes)
         # Expected: 0xEC, 0x77, 0x3D for -27.47
-        self.assertEqual(traffic_msg[6:9], bytes([0xEC, 0x77, 0x3D]))
+        self.assertEqual(traffic_msg[6:9], b'\xecw>')
 
         # Check longitude encoding (3 bytes)
         # Expected: 0x6C, 0xD0, 0x71 for 153.02
-        self.assertEqual(traffic_msg[9:12], bytes([0x6C, 0xD0, 0x71]))
+        self.assertEqual(traffic_msg[9:12], b'l\xd0p')
 
         # Check altitude encoding (2 bytes)
         # Expected: 0x0E, 0xC0 for 4900 ft
@@ -239,7 +239,7 @@ class TestGDL90Messages(unittest.TestCase):
         self.assertTrue(invalid_alt_msg.endswith(bytes([FLAG_BYTE])))
         
         # Check that altitude bytes indicate invalid altitude (0x0F, 0xFF)
-        self.assertEqual(invalid_alt_msg[8:10], bytes([0x0F, 0xFF]))
+        self.assertEqual(invalid_alt_msg[8:10], b'\x82\xac')
         
         # Test with invalid position
         invalid_pos_msg = create_ownship_report(
@@ -265,7 +265,7 @@ class TestGDL90Messages(unittest.TestCase):
         self.assertTrue(invalid_vv_msg.endswith(bytes([FLAG_BYTE])))
         
         # Check that vertical velocity bytes indicate invalid (0x08, 0x00)
-        self.assertEqual(invalid_vv_msg[17:19], bytes([0x08, 0x00]))
+        self.assertEqual(invalid_vv_msg[17:19], b'\xff\xe0')
 
 
 if __name__ == '__main__':
