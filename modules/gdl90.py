@@ -14,17 +14,59 @@ MSG_ID_OWNSHIP_REPORT = 0x0A # 10 - Ownship Pressure Altitude Report
 MSG_ID_TRAFFIC_REPORT = 0x14 # 20
 # Add other message IDs as needed (e.g., 0x01 Status, 0x07 ID)
 
-# --- CRC Calculation (Fletcher-16 variant used by GDL90) ---
+# --- CRC Calculation (CRC-16-CCITT as per GDL90 Spec) ---
 # Note: CRC is calculated *before* byte stuffing on the raw message payload (ID + Data)
 
-def calculate_crc(message_payload):
-    """Calculates the GDL90 Fletcher-16 checksum."""
-    c0, c1 = 0, 0
-    for byte in message_payload:
-        c0 = (c0 + byte) % 256
-        c1 = (c1 + c0) % 256
-    # The checksum itself is part of the stream, but not included in *its own* calculation
-    return bytes([c0, c1])
+CRC16Table = (
+    0x0000, 0x1021, 0x2042, 0x3063, 0x4084, 0x50a5, 0x60c6, 0x70e7,
+    0x8108, 0x9129, 0xa14a, 0xb16b, 0xc18c, 0xd1ad, 0xe1ce, 0xf1ef,
+    0x1231, 0x0210, 0x3273, 0x2252, 0x52b5, 0x4294, 0x72f7, 0x62d6,
+    0x9339, 0x8318, 0xb37b, 0xa35a, 0xd3bd, 0xc39c, 0xf3ff, 0xe3de,
+    0x2462, 0x3443, 0x0420, 0x1401, 0x64e6, 0x74c7, 0x44a4, 0x5485,
+    0xa56a, 0xb54b, 0x8528, 0x9509, 0xe5ee, 0xf5cf, 0xc5ac, 0xd58d,
+    0x3653, 0x2672, 0x1611, 0x0630, 0x76d7, 0x66f6, 0x5695, 0x46b4,
+    0xb75b, 0xa77a, 0x9719, 0x8738, 0xf7df, 0xe7fe, 0xd79d, 0xc7bc,
+    0x48c4, 0x58e5, 0x6886, 0x78a7, 0x0840, 0x1861, 0x2802, 0x3823,
+    0xc9cc, 0xd9ed, 0xe98e, 0xf9af, 0x8948, 0x9969, 0xa90a, 0xb92b,
+    0x5af5, 0x4ad4, 0x7ab7, 0x6a96, 0x1a71, 0x0a50, 0x3a33, 0x2a12,
+    0xdbfd, 0xcbdc, 0xfbbf, 0xeb9e, 0x9b79, 0x8b58, 0xbb3b, 0xab1a,
+    0x6ca6, 0x7c87, 0x4ce4, 0x5cc5, 0x2c22, 0x3c03, 0x0c60, 0x1c41,
+    0xedae, 0xfd8f, 0xcdec, 0xddcd, 0xad2a, 0xbd0b, 0x8d68, 0x9d49,
+    0x7e97, 0x6eb6, 0x5ed5, 0x4ef4, 0x3e13, 0x2e32, 0x1e51, 0x0e70,
+    0xff9f, 0xefbe, 0xdfdd, 0xcffc, 0xbf1b, 0xaf3a, 0x9f59, 0x8f78,
+    0x9188, 0x81a9, 0xb1ca, 0xa1eb, 0xd10c, 0xc12d, 0xf14e, 0xe16f,
+    0x1080, 0x00a1, 0x30c2, 0x20e3, 0x5004, 0x4025, 0x7046, 0x6067,
+    0x83b9, 0x9398, 0xa3fb, 0xb3da, 0xc33d, 0xd31c, 0xe37f, 0xf35e,
+    0x02b1, 0x1290, 0x22f3, 0x32d2, 0x4235, 0x5214, 0x6277, 0x7256,
+    0xb5ea, 0xa5cb, 0x95a8, 0x8589, 0xf56e, 0xe54f, 0xd52c, 0xc50d,
+    0x34e2, 0x24c3, 0x14a0, 0x0481, 0x7466, 0x6447, 0x5424, 0x4405,
+    0xa7db, 0xb7fa, 0x8799, 0x97b8, 0xe75f, 0xf77e, 0xc71d, 0xd73c,
+    0x26d3, 0x36f2, 0x0691, 0x16b0, 0x6657, 0x7676, 0x4615, 0x5634,
+    0xd94c, 0xc96d, 0xf90e, 0xe92f, 0x99c8, 0x89e9, 0xb98a, 0xa9ab,
+    0x5844, 0x4865, 0x7806, 0x6827, 0x18c0, 0x08e1, 0x3882, 0x28a3,
+    0xcb7d, 0xdb5c, 0xeb3f, 0xfb1e, 0x8bf9, 0x9bd8, 0xabbb, 0xbb9a,
+    0x4a75, 0x5a54, 0x6a37, 0x7a16, 0x0af1, 0x1ad0, 0x2ab3, 0x3a92,
+    0xfd2e, 0xed0f, 0xdd6c, 0xcd4d, 0xbdaa, 0xad8b, 0x9de8, 0x8dc9,
+    0x7c26, 0x6c07, 0x5c64, 0x4c45, 0x3ca2, 0x2c83, 0x1ce0, 0x0cc1,
+    0xef1f, 0xff3e, 0xcf5d, 0xdf7c, 0xaf9b, 0xbfba, 0x8fd9, 0x9ff8,
+    0x6e17, 0x7e36, 0x4e55, 0x5e74, 0x2e93, 0x3eb2, 0x0ed1, 0x1ef0,
+)
+
+def calculate_crc(data: bytes) -> bytes:
+    """Calculates the GDL90 CRC-16-CCITT checksum."""
+    mask16bit = 0xffff
+    crc = 0
+    for byte in data:
+        # Python 3 bytes are already ints, no need for ord()
+        m = (crc << 8) & mask16bit
+        # Ensure byte is treated as an integer index
+        crc = CRC16Table[(crc >> 8)] ^ m ^ byte
+    
+    # Return CRC bytes in LSB, MSB order as required by GDL90
+    crc_bytes = bytearray()
+    crc_bytes.append(crc & 0x00ff)       # LSB
+    crc_bytes.append((crc & 0xff00) >> 8) # MSB
+    return bytes(crc_bytes)
 
 # --- Byte Stuffing ---
 
@@ -46,8 +88,8 @@ def byte_stuff(raw_payload_with_crc):
 
 def frame_message(message_payload):
     """Adds CRC, performs byte stuffing, and adds framing flags."""
-    crc = calculate_crc(message_payload)
-    payload_with_crc = message_payload + crc
+    crc_bytes = calculate_crc(message_payload) # Returns LSB, MSB
+    payload_with_crc = message_payload + crc_bytes
     stuffed_payload = byte_stuff(payload_with_crc)
     return bytes([FLAG_BYTE]) + stuffed_payload + bytes([FLAG_BYTE])
 
@@ -200,7 +242,7 @@ def create_heartbeat_message(gps_valid=False, maintenance_required=False, ident_
     status_byte1 = 0b00100000 # Assume CDTI available
 
     # Status byte 2: GPS status
-    # Bit 7: Timestamp type (0=UTC, 1=GPS time)
+    # Bit 7: Reserved (0) - Will be set to bit 16 of timestamp below
     # Bit 6: GPS Position Valid (1=Valid, 0=Invalid)
     # Bit 5: Maintenance Required (1=Yes, 0=No)
     # Bit 4: IDENT state active (1=Yes, 0=No)
@@ -209,26 +251,38 @@ def create_heartbeat_message(gps_valid=False, maintenance_required=False, ident_
     # Bit 1: Reserved (set 1)
     # Bit 0: Reserved (set 1)
     status_byte2 = 0b00001111 # Base for reserved bits
-    if not utc_timing: status_byte2 |= 0b10000000
     if gps_valid:      status_byte2 |= 0b01000000
     if maintenance_required: status_byte2 |= 0b00100000
     if ident_active:   status_byte2 |= 0b00010000
+    if not utc_timing: status_byte2 |= 0b00000000  # No effect, just for clarity
 
     # Timestamp: UTC seconds since midnight * 10, max 863999 (0xD2F1F), 21 bits
     now_utc = datetime.now(timezone.utc)
     seconds_since_midnight = (now_utc - now_utc.replace(hour=0, minute=0, second=0, microsecond=0)).total_seconds()
-    utc_timestamp_field = min(int(seconds_since_midnight * 10), 863999) & 0x1FFFFF
+    utc_timestamp_field = min(int(seconds_since_midnight * 10), 863999)
+    
+    # Move bit 16 of the timestamp into the MSB of status byte 2
+    ts_bit16 = (utc_timestamp_field & 0x10000) >> 16
+    status_byte2 = (status_byte2 & 0b01111111) | (ts_bit16 << 7)
+    
+    # Pack timestamp as little-endian for the lower 16 bits (GDL90 specification)
+    ts_lower_16bits = utc_timestamp_field & 0xFFFF
+    ts_byte1 = ts_lower_16bits & 0xFF           # LSB
+    ts_byte2 = (ts_lower_16bits >> 8) & 0xFF    # MSB
 
-    ts_byte1 = (utc_timestamp_field >> 16) & 0xFF
-    ts_byte2 = (utc_timestamp_field >> 8) & 0xFF
-    ts_byte3 = utc_timestamp_field & 0xFF
-
-    # Correct format string for 6 bytes: ID, Status1, Status2, TS1, TS2, TS3
-    payload = struct.pack('>BBBBBB',
+    # Format message with 6 bytes: ID, Status1, Status2, TS1(LSB), TS2(MSB)
+    # Note that we're packing the timestamp in little-endian format
+    payload = struct.pack('>BBB',  # The message ID and status bytes are big-endian
                           message_id,
                           status_byte1,
-                          status_byte2,
-                          ts_byte1, ts_byte2, ts_byte3)
+                          status_byte2)
+    
+    payload += struct.pack('<BB',  # The timestamp is little-endian
+                           ts_byte1, 
+                           ts_byte2)
+
+    # We don't include a message count field as it's not in our current implementation
+    # The spec mentions it's optional
 
     return frame_message(payload)
 
@@ -283,7 +337,7 @@ def create_ownship_report(lat, lon, alt_press, misc, nic, nac_p, ground_speed, t
     payload.append(nav_integrity_byte)
     payload.extend(gs_bytes)
     payload.extend(vv_bytes)
-    payload.append(track_byte)
+    payload.extend(track_byte)    # Use extend instead of append for bytes object
     # Payload length = 1 + 3 + 3 + 2 + 1 + 1 + 2 + 2 + 1 = 16 bytes
 
     return frame_message(bytes(payload))
@@ -312,7 +366,7 @@ def create_ownship_geo_altitude(alt_geo, vpl):
     return frame_message(bytes(payload))
 
 
-def create_traffic_report(icao, lat, lon, alt_press, misc, nic, nac_p, horiz_vel, vert_vel, track, emitter_cat, callsign):
+def create_traffic_report(icao, lat, lon, alt_press, misc, nic, nac_p, horiz_vel, vert_vel, track, emitter_cat, callsign, code=0):
     """
     Creates a GDL90 Traffic Report message (ID 0x14).
 
@@ -321,8 +375,7 @@ def create_traffic_report(icao, lat, lon, alt_press, misc, nic, nac_p, horiz_vel
         lat (float): Latitude in degrees.
         lon (float): Longitude in degrees.
         alt_press (int): Pressure altitude in feet MSL.
-        misc (int): Traffic alert status (0=No alert, 1=Alert) + Address Type (0=ADS-B/ICAO, 1=Self-assigned, 2=TIS-B/Fine, 3=TIS-B/Coarse, 4=Surface, 5=Reserved)
-                      Byte format: SSSS AAAA (S=Status, A=Addr Type)
+        misc (int): Miscellaneous indicators (0-15, see GDL90 spec).
         nic (int): Navigation Integrity Category (0-11).
         nac_p (int): Navigation Accuracy Category for Position (0-11).
         horiz_vel (int): Horizontal velocity (ground speed) in knots.
@@ -330,54 +383,149 @@ def create_traffic_report(icao, lat, lon, alt_press, misc, nic, nac_p, horiz_vel
         track (int): True track/heading in degrees.
         emitter_cat (int): Emitter category (see GDL90 spec, e.g., 1=Light).
         callsign (str): Callsign (up to 8 chars).
+        code (int): Reserved field (0-15), typically 0.
     """
     message_id = MSG_ID_TRAFFIC_REPORT
 
-    icao_bytes = encode_icao_address(icao)
-    lat_bytes = encode_lat_lon(lat)
-    # Corrected the function call for longitude
-    lon_bytes = encode_lat_lon(lon)
-    alt_bytes = encode_altitude_pressure(alt_press)
-
-    # Handle invalid position/altitude
-    if lat_bytes is None or lon_bytes is None:
-        lat_bytes = b'\x00\x00\x00'
-        lon_bytes = b'\x00\x00\x00'
-        nic = 0
-        nac_p = 0
-    if alt_bytes == bytes([0x0F, 0xFF]):
-        alt_bytes = bytes([0x0F, 0xFF]) # Ensure invalid marker is used
-
-    # Combine NIC and NACp into one byte: (NIC << 4) | NACp
-    # Default to 0 if None before bitwise operations
+    # First byte is traffic alert status in upper 4 bits, address type in lower 4 bits
+    status_byte = misc
+    
+    # Pack ICAO address as 3 bytes
+    if isinstance(icao, str):
+        try:
+            icao_int = int(icao, 16)
+            if not (0 <= icao_int <= 0xFFFFFF):
+                icao_int = 0  # Use 0 for invalid
+        except (ValueError, TypeError):
+            icao_int = 0  # Use 0 for invalid
+    else:
+        icao_int = icao if isinstance(icao, int) and 0 <= icao <= 0xFFFFFF else 0
+    
+    # Encode latitude and longitude
+    if lat is None or lon is None or not (-90 <= lat <= 90) or not (-180 <= lon <= 180):
+        lat_int = 0
+        lon_int = 0
+        nic = 0  # NIC=0 indicates invalid position
+        nac_p = 0  # NACp should also be 0 if NIC is 0
+    else:
+        # Convert to semicircles per GDL90 spec
+        lat_int = int(lat * (0x800000 / 180.0))
+        if lat_int < 0:
+            lat_int = (0x1000000 + lat_int) & 0xFFFFFF  # 2's complement for 24 bits
+            
+        lon_int = int(lon * (0x800000 / 180.0))
+        if lon_int < 0:
+            lon_int = (0x1000000 + lon_int) & 0xFFFFFF  # 2's complement for 24 bits
+    
+    # Process altitude
+    if alt_press is None:
+        alt_enc = 0xFFF  # Invalid/Unknown altitude
+    else:
+        # Altitude in 25ft increments offset by +1000ft
+        alt_enc = int((alt_press + 1000) / 25.0)
+        if alt_enc < 0:
+            alt_enc = 0
+        if alt_enc > 0xFFE:
+            alt_enc = 0xFFE  # Max valid value (avoid using 0xFFF which is reserved for invalid)
+    
+    # Navigation integrity and accuracy
     nic_val = nic if nic is not None else 0
     nac_p_val = nac_p if nac_p is not None else 0
     nav_integrity_byte = ((nic_val & 0x0F) << 4) | (nac_p_val & 0x0F)
-
-    vel_bytes = encode_velocity(horiz_vel)
-    vv_bytes = encode_vertical_velocity(vert_vel)
-    track_byte = encode_track_heading(track)
-    callsign_bytes = encode_callsign(callsign)
-
-    # Misc byte: Upper nibble = Alert Status (0=No, 1=Alert), Lower nibble = Address Type
-    misc_byte = (misc & 0xFF)
-
+    
+    # Process horizontal velocity
+    if horiz_vel is None:
+        h_vel = 0xFFF  # Invalid/Unknown
+    elif horiz_vel < 0:
+        h_vel = 0
+    elif horiz_vel > 0xFFE:
+        h_vel = 0xFFE  # Max valid value
+    else:
+        h_vel = int(round(horiz_vel))
+    
+    # Process vertical velocity
+    if vert_vel is None:
+        v_vel = 0x800  # Invalid/Unknown (-2048 in 12-bit 2's complement)
+    else:
+        # Convert to 64fpm increments
+        v_vel = int(vert_vel / 64.0)
+        
+        # Clamp to valid range
+        if v_vel > 2047:
+            v_vel = 2047
+        elif v_vel < -2047:
+            v_vel = -2047  # Avoid -2048 which is the invalid marker
+            
+        # Convert to 12-bit 2's complement if negative
+        if v_vel < 0:
+            v_vel = (0x1000 + v_vel) & 0xFFF  # 12-bit 2's complement
+    
+    # Process track/heading
+    if track is None or not (0 <= track < 360):
+        track_enc = 0
+    else:
+        track_enc = int(track * (256.0 / 360.0)) & 0xFF
+    
+    # Process emitter category
+    emitter = emitter_cat if emitter_cat is not None else 0
+    emitter = emitter & 0xFF
+    
+    # Process callsign
+    if not callsign:
+        callsign_bytes = b'        '  # 8 spaces
+    else:
+        # Ensure ASCII, strip non-printable, pad/truncate to 8 chars
+        cleaned = ''.join(c for c in callsign if 32 <= ord(c) <= 126)
+        padded = cleaned.ljust(8)[:8]
+        callsign_bytes = padded.encode('ascii')
+    
+    # Build the message payload
     payload = bytearray([message_id])
-    payload.append(misc_byte)
-    payload.extend(icao_bytes)
-    payload.extend(lat_bytes)
-    payload.extend(lon_bytes)
-    payload.extend(alt_bytes)
+    
+    # Status byte (alert status in upper 4 bits, address type in lower 4 bits)
+    payload.append(status_byte & 0xFF)
+    
+    # ICAO address (3 bytes)
+    payload.append((icao_int >> 16) & 0xFF)
+    payload.append((icao_int >> 8) & 0xFF)
+    payload.append(icao_int & 0xFF)
+    
+    # Latitude (3 bytes)
+    payload.append((lat_int >> 16) & 0xFF)
+    payload.append((lat_int >> 8) & 0xFF)
+    payload.append(lat_int & 0xFF)
+    
+    # Longitude (3 bytes)
+    payload.append((lon_int >> 16) & 0xFF)
+    payload.append((lon_int >> 8) & 0xFF)
+    payload.append(lon_int & 0xFF)
+    
+    # Altitude (2 bytes) - top 8 bits in first byte, low 4 bits combined with misc in second byte
+    payload.append((alt_enc >> 4) & 0xFF)
+    payload.append(((alt_enc & 0x0F) << 4) | (misc & 0x0F))
+    
+    # Navigation integrity/accuracy
     payload.append(nav_integrity_byte)
-    payload.extend(vel_bytes)
-    payload.extend(vv_bytes)
-    payload.extend(track_byte)         # Use extend for bytes object
-    # Default emitter_cat to 0 if None
-    emitter_cat_val = emitter_cat if emitter_cat is not None else 0
-    payload.append(emitter_cat_val & 0xFF)
+    
+    # Velocities (3 bytes combined) - exact byte ordering from GDL90 spec
+    payload.append((h_vel >> 4) & 0xFF)  # Top 8 bits of horizontal velocity
+    payload.append(((h_vel & 0x0F) << 4) | ((v_vel >> 8) & 0x0F))  # Bottom 4 bits of h_vel + top 4 bits of v_vel
+    payload.append(v_vel & 0xFF)  # Bottom 8 bits of vertical velocity
+    
+    # Track/heading (1 byte)
+    payload.append(track_enc)
+    
+    # Emitter category (1 byte)
+    payload.append(emitter)
+    
+    # Callsign (8 bytes)
     payload.extend(callsign_bytes)
-    # Payload length = 1 + 1 + 3 + 3 + 3 + 2 + 1 + 2 + 2 + 1 + 1 + 8 = 28 bytes
-
+    
+    # Code field (1 byte) - code in top 4 bits, bottom 4 bits are spare
+    payload.append((code & 0x0F) << 4)
+    
+    # Payload length = 1 + 1 + 3 + 3 + 3 + 2 + 1 + 3 + 1 + 1 + 8 + 1 = 28 bytes
+    
     return frame_message(bytes(payload))
 
 
